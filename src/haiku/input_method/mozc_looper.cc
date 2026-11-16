@@ -45,7 +45,13 @@ using commands::SessionCommand;
 
 enum : uint32 {
   kMsgCallback = 'MZcb',
+  kMsgRelocate = 'MZrl',
 };
+
+// Some applications tell where the text is only after they have drawn it
+// (GTK through its Wayland layer), so the place is asked for again a bit
+// after the composition starts.
+constexpr bigtime_t kRelocateDelay = 150000;
 
 constexpr bigtime_t kSyncInterval = 5 * 60 * 1000000LL;
 constexpr char kSettingsFile[] = "haiku_input_method.settings";
@@ -206,6 +212,11 @@ void MozcLooper::MessageReceived(BMessage* message) {
       }
       break;
     }
+    case kMsgRelocate:
+      if (composing_) {
+        RequestLocation();
+      }
+      break;
     case kMsgCallback: {
       const void* data = nullptr;
       ssize_t size = 0;
@@ -435,9 +446,12 @@ void MozcLooper::UpdatePreedit(const commands::Preedit& preedit) {
   Enqueue(message);
   has_preedit_ = true;
 
+  // Where to show candidates; the answer follows the text as it grows.
+  RequestLocation();
   if (!was_composing) {
-    // Where to show candidates, asked once the preedit is on screen.
-    RequestLocation();
+    BMessage relocate(kMsgRelocate);
+    BMessageRunner::StartSending(BMessenger(this), &relocate, kRelocateDelay,
+                                 1);
   }
 }
 

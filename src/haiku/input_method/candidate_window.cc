@@ -271,6 +271,13 @@ void CandidateWindow::MessageReceived(BMessage* message) {
 }
 
 void CandidateWindow::Place(BPoint caret, float line_height) {
+  // Some applications report a line that is too low, or none at all (the
+  // Wayland layer of GTK before it knows the cursor rectangle); a line is
+  // at least as high as the system font.
+  font_height height;
+  be_plain_font->GetHeight(&height);
+  line_height =
+      std::max(line_height, std::ceil(height.ascent + height.descent));
   const BRect screen = BScreen(this).Frame();
   const BRect frame = Frame();
   float x = caret.x;
