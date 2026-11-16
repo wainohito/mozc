@@ -150,7 +150,7 @@ tool: $(TOOL)
 
 MOZC_VERSION := $(shell sed -n 's/.*"\([0-9]*\.[0-9]*\.[0-9]*\)\.[0-9]*".*/\1/p' \
 	$(GEN_DIR)/base/version_def.h | head -1)
-PKG_VERSION := $(MOZC_VERSION)-1
+PKG_VERSION := $(MOZC_VERSION)-2
 HPKG := $(OUT)/mozc-$(PKG_VERSION)-x86_64.hpkg
 PKG_ROOT := $(OUT)/hpkg
 STRIP := $(CROSS)strip
@@ -184,7 +184,7 @@ hpkg: $(HPKG)
 TERMINALJ ?= $(HOME)/renkuapp/terminalj
 QT6_BASE ?= $(OUT)/qt6_base-6.10.3.1-1-x86_64.hpkg
 QT5_PLUGINS ?= $(OUT)/qthaikuplugins-5.15.16.0.1-1-x86_64.hpkg
-BUNDLE_NAME := Mozc-for-RenkuOS-$(MOZC_VERSION)
+BUNDLE_NAME := Mozc-for-RenkuOS-$(PKG_VERSION)
 BUNDLE := $(OUT)/$(BUNDLE_NAME).zip
 
 bundle: $(HPKG)
