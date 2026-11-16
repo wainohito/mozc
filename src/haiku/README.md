@@ -17,6 +17,25 @@ cross build.
 `mozc_server` itself is the unchanged Mozc server; the platform code it needs
 is under `#if defined(__HAIKU__)` / `port::IsHaiku()` in `base/` and `ipc/`.
 
+## Installing
+
+The [release 3.35.6354-2](https://github.com/wainohito/mozc/releases/tag/renkuos-3.35.6354-2)
+has the packages and `Mozc-for-RenkuOS-3.35.6354-2.zip`, which holds them all
+with an installer. Extract the zip and double-click "インストール" (Install);
+it installs Mozc and TerminalJ+, adds qt6_base when Qt 6 is installed (or
+asks), and adds qthaikuplugins when Qt 5 is installed. From Terminal:
+
+    pkgman install mozc-3.35.6354-2-x86_64.hpkg terminalj_plus-1.0.0-1-x86_64.hpkg
+    pkgman install qt6_base-6.10.3.1-1-x86_64.hpkg                 # Qt 6 apps
+    pkgman install qthaikuplugins-5.15.16.0.1-1-x86_64.hpkg        # Qt 5 apps
+
+* Over 3.35.6354-1: install the new package the same way; it updates in
+  place, no reboot needed.
+* Over Mozc 2.x of HaikuPorts: uninstall it (`pkgman uninstall mozc`) and
+  reboot first. Its input method crashes the input_server when it is
+  removed, and the keyboard stays dead until a reboot. The installer stops
+  and says so when it finds Mozc 2.x.
+
 ## Building
 
 Bazel cannot target Haiku, so the host build is the source of truth and a
