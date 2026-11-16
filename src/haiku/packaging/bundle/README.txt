@@ -17,9 +17,11 @@ RenkuOS で日本語を入力するための Mozc（Google 日本語入力のオ
     - TerminalJ+      カーソル位置で日本語を変換できるターミナル
     - Qt 6 対応       Qt 6 アプリ（FeatherPad など）でカーソル位置で変換できるようにする
                       qt6_base（Qt 6 が入っているときは自動で、入っていないときは確認します）
+    - Qt 5 対応       Qt 5 アプリ（Falkon など）でカーソル位置で変換できるようにする
+                      qthaikuplugins（Qt 5 が入っているときだけ入れます）
 
   ターミナルから入れる場合:
-    pkgman install mozc-*.hpkg terminalj_plus-*.hpkg [qt6_base-*.hpkg]
+    pkgman install mozc-*.hpkg terminalj_plus-*.hpkg [qt6_base-*.hpkg] [qthaikuplugins-*.hpkg]
 
 ■ 使い方
   - Command+Space（通常は Alt+Space）で Roman と Mozc を切り替えます。
@@ -32,19 +34,24 @@ RenkuOS で日本語を入力するための Mozc（Google 日本語入力のオ
   - StyledEdit、Mail などのアプリ、GTK 3 アプリ: そのまま
   - ターミナル: TerminalJ+ を使ってください（標準の Terminal は画面下の小窓で変換）
   - Qt 6 アプリ: 同梱の qt6_base を入れると対応
+  - Qt 5 アプリ: 同梱の qthaikuplugins を入れると対応
   それ以外のアプリでも、画面下の小窓で変換して入力できます。
 
 ■ アンインストール
     pkgman uninstall mozc terminalj_plus
   qt6_base を元に戻すには、pkgman uninstall qt6_base のあと pkgman install qt6_base
-  （Qt 6 アプリを使っている場合）。
+  （Qt 6 アプリを使っている場合）。qthaikuplugins も同じです。
 
 ■ 注意
   - 同梱の qt6_base は、HaikuPorts の qt6_base 6.10.3 の Haiku 用プラグインだけを
     差し替えたものです。HaikuPorts で qt6_base が新しくなると置き換わり、
     Qt 6 アプリでは画面下の小窓での変換に戻ります。
+  - 同梱の qthaikuplugins も同様に、HaikuPorts の qthaikuplugins 5.15.16.0 の
+    Qt 5 用プラットフォームプラグインだけを差し替えたものです。
   - ユーザー辞書と設定は ~/config/settings/mozc にあります。
 
 ■ ライセンス
-  Mozc: BSD 3 条項、TerminalJ+: MIT、qt6_base: LGPL v3 / GPL v3
-  （変更点のパッチは /boot/system/data/doc/qt6_base にあります）
+  Mozc: BSD 3 条項、TerminalJ+: MIT、qt6_base: LGPL v3 / GPL v3、
+  qthaikuplugins: LGPL v2.1 / v3
+  （変更点のパッチは /boot/system/data/doc/qt6_base と
+  /boot/system/data/doc/qthaikuplugins にあります）

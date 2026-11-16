@@ -1,4 +1,4 @@
-From ba810b5faab91daac4046de12e20bd1895000eed Mon Sep 17 00:00:00 2001
+From ee6899b94481fe38d534f15f79a1216c4777817e Mon Sep 17 00:00:00 2001
 From: wainohito <wainohito@gmail.com>
 Date: Mon, 16 Nov 2026 14:43:38 +0900
 Subject: [PATCH] platform: compose input method text inline
@@ -24,11 +24,11 @@ Signed-off-by: wainohito <wainohito@gmail.com>
  platforms/qhaikuplatform/haiku/haiku.pro      |   2 +
  .../haiku/qhaikuinputcontext.cpp              | 309 ++++++++++++++++++
  .../qhaikuplatform/haiku/qhaikuinputcontext.h |  74 +++++
- .../haiku/qhaikuintegration.cpp               |  12 +
- .../qhaikuplatform/haiku/qhaikuintegration.h  |   7 +
+ .../haiku/qhaikuintegration.cpp               |   7 +
+ .../qhaikuplatform/haiku/qhaikuintegration.h  |   4 +
  .../qhaikuplatform/haiku/qhaikuwindow.cpp     |  18 +
  platforms/qhaikuplatform/haiku/qhaikuwindow.h |   2 +
- 7 files changed, 424 insertions(+)
+ 7 files changed, 416 insertions(+)
  create mode 100644 platforms/qhaikuplatform/haiku/qhaikuinputcontext.cpp
  create mode 100644 platforms/qhaikuplatform/haiku/qhaikuinputcontext.h
 
@@ -448,7 +448,7 @@ index 0000000..a2f91e8
 +
 +#endif
 diff --git a/platforms/qhaikuplatform/haiku/qhaikuintegration.cpp b/platforms/qhaikuplatform/haiku/qhaikuintegration.cpp
-index b98b5b1..9c41673 100644
+index b98b5b1..cd5a106 100644
 --- a/platforms/qhaikuplatform/haiku/qhaikuintegration.cpp
 +++ b/platforms/qhaikuplatform/haiku/qhaikuintegration.cpp
 @@ -53,6 +53,7 @@
@@ -467,7 +467,7 @@ index b98b5b1..9c41673 100644
  	m_openGlEnabled = isOpenGLEnabled();
  }
  
-@@ -360,4 +362,14 @@ QPlatformServices *QHaikuIntegration::services() const
+@@ -360,4 +362,9 @@ QPlatformServices *QHaikuIntegration::services() const
      return m_services;
  }
  
@@ -476,28 +476,21 @@ index b98b5b1..9c41673 100644
 +	return m_inputContext.data();
 +}
 +
-+QPlatformInputContext *QHaikuIntegration::inputContext() const
-+{
-+	return m_inputContext.data();
-+}
-+
  QT_END_NAMESPACE
 diff --git a/platforms/qhaikuplatform/haiku/qhaikuintegration.h b/platforms/qhaikuplatform/haiku/qhaikuintegration.h
-index 3385918..579f74f 100644
+index 3385918..d1af3d1 100644
 --- a/platforms/qhaikuplatform/haiku/qhaikuintegration.h
 +++ b/platforms/qhaikuplatform/haiku/qhaikuintegration.h
-@@ -41,6 +41,10 @@
+@@ -41,6 +41,8 @@
  #ifndef QHAIKUINTEGRATION_H
  #define QHAIKUINTEGRATION_H
  
 +#include <qpa/qplatforminputcontext.h>
 +#include <QtCore/QScopedPointer>
-+#include <qpa/qplatforminputcontext.h>
-+#include <QtCore/QScopedPointer>
  #include <qpa/qplatformintegration.h>
  #include <qpa/qplatformopenglcontext.h>
  #include <qscopedpointer.h>
-@@ -86,6 +90,7 @@ public:
+@@ -86,6 +88,7 @@ public:
      QHaikuScreen *screen() { return m_screen; }
  
      QPlatformFontDatabase *fontDatabase() const;
@@ -505,11 +498,10 @@ index 3385918..579f74f 100644
      QAbstractEventDispatcher *createEventDispatcher() const;
      QPlatformNativeInterface *nativeInterface() const { return m_nativeInterface; }
  
-@@ -105,6 +110,8 @@ private:
+@@ -105,6 +108,7 @@ private:
      QHaikuSystemLocale *m_haikuSystemLocale;
      QHaikuScreen *m_screen;
      mutable QHaikuClipboard* m_clipboard;
-+    QScopedPointer<QPlatformInputContext> m_inputContext;
 +    QScopedPointer<QPlatformInputContext> m_inputContext;
      bool m_openGlEnabled;
  private Q_SLOTS:

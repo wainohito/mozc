@@ -25,7 +25,7 @@ Makefile does the cross build:
     make -C haiku gen BAZEL=bazelisk   # once, and after updating Mozc
     make -C haiku -j8                  # mozc_server, Mozc, mozc_tool
     make -C haiku hpkg                 # out_haiku/mozc-<version>-x86_64.hpkg
-    make -C haiku bundle               # zip with Mozc, TerminalJ+, qt6_base
+    make -C haiku bundle               # zip with Mozc, TerminalJ+, Qt packages
                                        # and an installer
 
 `make gen` builds Mozc for Linux with Bazel, reads the compile actions with
@@ -80,8 +80,16 @@ bottom-line window and sends the result as key presses.
 
   It needs the moc of Qt 6.10 on the host. When HaikuPorts updates
   qt6_base, the package has to be made again for the new version.
-* Qt 5: the same change for qthaikuplugins is in `patches/qthaikuplugins`,
-  but is not built yet.
+* Qt 5: the same change for qthaikuplugins is in `patches/qthaikuplugins`.
+  `build/build_qthaikuplugins.sh` makes a qthaikuplugins package that is the
+  HaikuPorts one with only the platform plugin replaced (version
+  5.15.16.0.1-1, kept over 5.15.16.0-1):
+
+      haiku/build/build_qthaikuplugins.sh <work dir> out_haiku
+      pkgman install qthaikuplugins-5.15.16.0.1-1-x86_64.hpkg
+
+  It needs the moc of Qt 5.15 on the host. Tested with Falkon, in its own
+  fields and in web pages.
 * Terminal: needs `patches/renkuos/0002-...` (its inline input was disabled).
   TerminalJ+ (https://github.com/wainohito/terminalj-plus) is Terminal with
   that change, as a separate application.

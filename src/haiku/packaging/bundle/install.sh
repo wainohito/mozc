@@ -3,7 +3,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Installs Mozc for RenkuOS from this folder: Mozc, TerminalJ+, and, for Qt 6
-# applications, the qt6_base with inline input. Can be run from Tracker.
+# and Qt 5 applications, the qt6_base and qthaikuplugins with inline input.
+# Can be run from Tracker.
 
 dir=$(dirname "$0")
 log=/tmp/mozc-install.log
@@ -37,6 +38,16 @@ Qt 6 がまだ入っていないので、Qt 6 本体（数十 MB）も一緒に�
 		if [ $? = 1 ]; then
 			packages="$packages $qt_package"
 		fi
+	fi
+fi
+
+# Qt 5 is only given inline input when it is there already.
+qt5_package=$(ls "$dir"/qthaikuplugins-*.hpkg 2>/dev/null)
+if [ -n "$qt5_package" ]; then
+	installed=$(ls /boot/system/packages/qthaikuplugins-*.hpkg \
+		/boot/home/config/packages/qthaikuplugins-*.hpkg 2>/dev/null)
+	if [ -n "$installed" ]; then
+		packages="$packages $qt5_package"
 	fi
 fi
 
