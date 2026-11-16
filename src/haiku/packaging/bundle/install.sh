@@ -9,6 +9,19 @@ dir=$(dirname "$0")
 log=/tmp/mozc-install.log
 packages="$(ls "$dir"/mozc-*.hpkg "$dir"/terminalj_plus-*.hpkg)"
 
+# Mozc 2.x of HaikuPorts crashes the input_server when it is removed while
+# running (a double free in its MozcLooper), so it has to go before a reboot.
+old_mozc=$(ls /boot/system/packages/mozc-2.*.hpkg \
+	/boot/home/config/packages/mozc-2.*.hpkg 2>/dev/null)
+if [ -n "$old_mozc" ]; then
+	alert --warning "古い Mozc（2.x）が入っています。
+
+先に HaikuDepot などで古い Mozc をアンインストールし、再起動してから、もう一度このインストーラーを実行してください。
+
+アンインストールの直後にデバッガが開いてキーボードが効かなくなることがありますが、再起動すれば直ります。" "OK"
+	exit 1
+fi
+
 qt_package=$(ls "$dir"/qt6_base-*.hpkg 2>/dev/null)
 if [ -n "$qt_package" ]; then
 	installed=$(ls /boot/system/packages/qt6_base-*.hpkg \
