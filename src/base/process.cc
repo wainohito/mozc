@@ -67,6 +67,10 @@
 #include <sys/types.h>
 #endif  // __linux__
 
+#ifdef __HAIKU__
+#include <unistd.h>
+#endif  // __HAIKU__
+
 #ifdef __APPLE__
 #include <crt_externs.h>
 
@@ -220,14 +224,34 @@ bool Process::SpawnProcess(absl::string_view path, absl::string_view arg,
 #endif  // __linux__ || __HAIKU__
   pid_t tmp_pid = 0;
 
+  posix_spawn_file_actions_t* file_actions = nullptr;
+#ifdef __HAIKU__
+  // The child would get every descriptor of this process, and on Haiku this
+  // process is the input_server: the PS/2 keyboard and mouse can only be
+  // opened once, so a mozc_server holding them keeps a restarted
+  // input_server from opening them. Haiku has no closefrom action.
+  posix_spawn_file_actions_t haiku_file_actions;
+  ::posix_spawn_file_actions_init(&haiku_file_actions);
+  const int max_fd = ::getdtablesize();
+  for (int fd = STDERR_FILENO + 1; fd < max_fd; ++fd) {
+    if (::fcntl(fd, F_GETFD) != -1) {
+      ::posix_spawn_file_actions_addclose(&haiku_file_actions, fd);
+    }
+  }
+  file_actions = &haiku_file_actions;
+#endif  // __HAIKU__
+
   // Spawn new process.
   // NOTE:
   // posix_spawn returns 0 even if kMozcServer doesn't exist, because
   // the return value of posix_spawn is basically determined
   // by the return value of fork().
   const int result =
-      ::posix_spawn(&tmp_pid, pf_path.c_str(), nullptr, nullptr,
+      ::posix_spawn(&tmp_pid, pf_path.c_str(), file_actions, nullptr,
                     const_cast<char* const*>(argv.get()), environ);
+  if (file_actions != nullptr) {
+    ::posix_spawn_file_actions_destroy(file_actions);
+  }
   if (result == 0) {
     MOZC_VLOG(1) << "posix_spawn: child pid is " << tmp_pid;
   } else {
