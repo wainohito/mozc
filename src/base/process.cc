@@ -100,6 +100,11 @@ bool Process::OpenBrowser(absl::string_view url) {
       L"open", win32::Utf8ToWide(url).c_str(), nullptr);
 #endif  // _WIN32
 
+#ifdef __HAIKU__
+  // "open" hands the URL to the preferred application of its MIME type.
+  return SpawnProcess("/bin/open", url);
+#endif  // __HAIKU__
+
 #ifdef __linux__
 
 #ifndef MOZC_BROWSER_COMMAND
@@ -189,7 +194,7 @@ bool Process::SpawnProcess(absl::string_view path, absl::string_view arg,
   }
 #endif  // __APPLE__
 
-#ifdef __linux__
+#if defined(__linux__) || defined(__HAIKU__)
   // Do not call posix_spawn() for obviously bad path.
   if (!S_ISREG(statbuf.st_mode)) {
     LOG(ERROR) << "Not a regular file: " << path;
@@ -212,7 +217,7 @@ bool Process::SpawnProcess(absl::string_view path, absl::string_view arg,
   // (www.gnu.org/software/libc/manual/html_node/Heap-Consistency-Checking.html)
   constexpr int kOverwrite = 0;  // Do not overwrite.
   ::setenv("MALLOC_CHECK_", "2", kOverwrite);
-#endif  // __linux__
+#endif  // __linux__ || __HAIKU__
   pid_t tmp_pid = 0;
 
   // Spawn new process.
@@ -389,7 +394,7 @@ bool Process::LaunchErrorMessageDialog(absl::string_view error_type) {
   }
 #endif  // _WIN32
 
-#if defined(__linux__) && !defined(__ANDROID__)
+#if (defined(__linux__) && !defined(__ANDROID__)) || defined(__HAIKU__)
   constexpr char kMozcTool[] = "mozc_tool";
   const std::string arg =
       absl::StrCat("--mode=error_message_dialog --error_type=", error_type);
@@ -398,7 +403,7 @@ bool Process::LaunchErrorMessageDialog(absl::string_view error_type) {
     LOG(ERROR) << "cannot launch " << kMozcTool;
     return false;
   }
-#endif  // __linux__ && !__ANDROID__
+#endif  // (__linux__ && !__ANDROID__) || __HAIKU__
 
   return true;
 }

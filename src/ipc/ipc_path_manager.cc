@@ -62,6 +62,11 @@
 #error "This platform is not supported."
 #endif  // __ANDROID__ || __wasm__
 
+#ifdef __HAIKU__
+#include <OS.h>
+#include <image.h>
+#endif  // __HAIKU__
+
 #ifdef __APPLE__
 #include <sys/sysctl.h>
 
@@ -392,6 +397,26 @@ bool IPCPathManager::IsValidServer(uint32_t pid,
   server_path_ = filename.value();
   server_pid_ = pid;
 #endif  // __linux__
+
+#ifdef __HAIKU__
+  // The executable is the B_APP_IMAGE of the server team.
+  bool found = false;
+  image_info info;
+  int32_t cookie = 0;
+  while (get_next_image_info(static_cast<team_id>(pid), &cookie, &info) ==
+         B_OK) {
+    if (info.type == B_APP_IMAGE) {
+      server_path_ = info.name;
+      server_pid_ = pid;
+      found = true;
+      break;
+    }
+  }
+  if (!found) {
+    LOG(ERROR) << "Cannot find the executable of team " << pid;
+    return false;
+  }
+#endif  // __HAIKU__
 
   MOZC_VLOG(1) << "server path: " << server_path << " " << server_path_;
 

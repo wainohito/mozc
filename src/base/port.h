@@ -47,6 +47,7 @@ enum class PlatformType {
   kIos,       // iOS Devices or Simulator
   kWasm,      // WebAssembly
   kChromeos,  // ChromeOS
+  kHaiku,     // Haiku and RenkuOS
 };
 
 // kTargetPlatform is the current build target platform.
@@ -70,9 +71,11 @@ inline constexpr PlatformType kTargetPlatform = PlatformType::kIos;
 #endif                   // !TARGET_OS_IPHONE
 #elif defined(__wasm__)  // __APPLE__
 inline constexpr PlatformType kTargetPlatform = PlatformType::kWasm;
-#else                    // __wasm__
+#elif defined(__HAIKU__)  // __wasm__
+inline constexpr PlatformType kTargetPlatform = PlatformType::kHaiku;
+#else                     // __HAIKU__
 #error "Unsupported target platform."
-#endif  // !__wasm__
+#endif  // !__HAIKU__
 
 }  // namespace internal
 
@@ -158,6 +161,10 @@ constexpr bool IsWasm() {
 // The build target is ChromeOS.
 constexpr bool IsChromeos() {
   return internal::kTargetPlatform == internal::PlatformType::kChromeos;
+}
+
+constexpr bool IsHaiku() {
+  return internal::kTargetPlatform == internal::PlatformType::kHaiku;
 }
 
 }  // namespace port

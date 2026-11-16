@@ -244,6 +244,10 @@ RunLevel::RunLevelType RunLevel::GetRunLevel(RunLevel::RequestType type) {
 #elif defined(__wasm__)
   // WASM doesn't have runlevels. Always return normal.
   return RunLevel::NORMAL;
+#elif defined(__HAIKU__)
+  // Haiku is a single user system and its user is root (uid 0), so the uid
+  // checks below would deny everything.
+  return RunLevel::NORMAL;
 #else  // _WIN32
   if (type == SERVER || type == RENDERER) {
     if (::geteuid() == 0) {

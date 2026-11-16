@@ -49,6 +49,12 @@
 #include "base/android_util.h"
 #endif  // __ANDROID__
 
+#ifdef __HAIKU__
+#include <FindDirectory.h>
+#include <OS.h>
+#include <fs_info.h>
+#endif  // __HAIKU__
+
 #ifdef __APPLE__
 #include <TargetConditionals.h>  // for TARGET_OS_*
 #include <sys/stat.h>
@@ -246,6 +252,16 @@ std::string UserProfileDirectoryImpl::GetUserProfileDirectory() const {
     }
     return FileUtil::JoinPath(home, ".config/mozc");
 
+#elif defined(__HAIKU__)
+    // ~/config/settings/mozc
+    char buffer[B_PATH_NAME_LENGTH];
+    if (find_directory(B_USER_SETTINGS_DIRECTORY, dev_for_path("/boot"), true,
+                       buffer, sizeof(buffer)) == B_OK) {
+      return FileUtil::JoinPath(buffer, "mozc");
+    }
+    LOG(ERROR) << "Cannot find the user settings directory.";
+    return "/boot/home/config/settings/mozc";
+
 #else  // Supported platforms
     LOG(ERROR) << "Undefined target platform.";
     return "";
@@ -312,10 +328,31 @@ std::string GetMozcInstallDirFromRegistry() {
 }  // namespace
 #endif  // _WIN32
 
+#ifdef __HAIKU__
+namespace {
+
+// Any symbol of this image will do: find_path() resolves it to the
+// installation location (system or home) of the package containing it.
+void HaikuImageAnchor() {}
+
+}  // namespace
+#endif  // __HAIKU__
+
 std::string SystemUtil::GetServerDirectory() {
   if constexpr (port::IsLinuxBase() || port::IsWasm()) {
     return std::string(kMozcServerDir);
   }
+
+#ifdef __HAIKU__
+  // <installation location>/lib/mozc, e.g. /boot/system/lib/mozc.
+  char buffer[B_PATH_NAME_LENGTH];
+  if (find_path(reinterpret_cast<const void*>(&HaikuImageAnchor),
+                B_FIND_PATH_LIB_DIRECTORY, "mozc", buffer,
+                sizeof(buffer)) == B_OK) {
+    return buffer;
+  }
+  return std::string(kMozcServerDir);
+#endif  // __HAIKU__
 
 #ifdef _WIN32
   const std::string install_dir_from_registry = GetMozcInstallDirFromRegistry();
@@ -566,6 +603,11 @@ std::string SystemUtil::GetDesktopNameAsString() {
   return Environ::GetEnv("DISPLAY");
 #endif  // __linux__ || __wasm__
 
+#if defined(__HAIKU__)
+  // There is a single desktop.
+  return "";
+#endif  // __HAIKU__
+
 #if defined(__APPLE__)
   return "";
 #endif  // __APPLE__
@@ -623,7 +665,9 @@ std::string SystemUtil::GetOSVersionString() {
                           AndroidUtil::kSystemPropertyOsVersion, "Unknown"));
 #elif defined(__linux__)
   return "Linux";
-#else   // !_WIN32 && !__APPLE__ && !__linux__
+#elif defined(__HAIKU__)
+  return "Haiku";
+#else   // !_WIN32 && !__APPLE__ && !__linux__ && !__HAIKU__
   return "Unknown";
 #endif  // _WIN32, __APPLE__, __linux__
 }
@@ -675,6 +719,14 @@ uint64_t SystemUtil::GetTotalPhysicalMemory() {
   }
   return total_memory;
 #endif  // __APPLE__
+
+#if defined(__HAIKU__)
+  system_info info;
+  if (get_system_info(&info) != B_OK) {
+    return 0;
+  }
+  return static_cast<uint64_t>(info.max_pages) * B_PAGE_SIZE;
+#endif  // __HAIKU__
 
 #if defined(__linux__) || defined(__wasm__)
 #if defined(_SC_PAGESIZE) && defined(_SC_PHYS_PAGES)

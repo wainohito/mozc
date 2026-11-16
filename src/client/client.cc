@@ -894,7 +894,8 @@ bool Client::LaunchTool(absl::string_view mode,
     return false;
   }
 
-  if constexpr (port::IsWindows() || port::IsLinuxBase()) {
+  if constexpr (port::IsWindows() || port::IsLinuxBase() ||
+                port::IsHaiku()) {
     std::string arg = absl::StrCat("--mode=", mode);
     if (!extra_arg.empty()) {
       absl::StrAppend(&arg, " ", extra_arg);

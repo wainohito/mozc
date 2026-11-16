@@ -238,7 +238,8 @@ std::unique_ptr<ImeContext> Session::CreateContext(
   // TODO(team): Remove #if based behavior change for cascading window.
   // Tests for session layer (session_handler_scenario_test, etc) can be
   // unstable.
-  if constexpr (port::IsIos() || port::IsLinuxBase() || port::IsWasm()) {
+  if constexpr (port::IsIos() || port::IsLinuxBase() || port::IsWasm() ||
+                port::IsHaiku()) {
     context->mutable_converter()->set_use_cascading_window(false);
   }
 
@@ -1009,7 +1010,8 @@ void Session::UpdatePreferences(commands::Command* command) {
         config.selection_shortcut());
   }
 
-  if constexpr (port::IsIos() || port::IsLinuxBase() || port::IsWasm()) {
+  if constexpr (port::IsIos() || port::IsLinuxBase() || port::IsWasm() ||
+                port::IsHaiku()) {
     context_->mutable_converter()->set_use_cascading_window(false);
   } else {
     if (config.has_use_cascading_window()) {

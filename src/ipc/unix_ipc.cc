@@ -27,8 +27,9 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// __linux__ only. Note that __ANDROID__/__wasm__ don't reach here.
-#if defined(__linux__)
+// __linux__ and __HAIKU__ only. Note that __ANDROID__/__wasm__ don't reach
+// here.
+#if defined(__linux__) || defined(__HAIKU__)
 
 #include <fcntl.h>
 #include <sys/select.h>
@@ -38,6 +39,7 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
@@ -211,6 +213,22 @@ void SetCloseOnExecFlag(int fd) {
 bool IsAbstractSocket(absl::string_view address) {
   return (!address.empty()) && (address[0] == '\0');
 }
+
+// Returns the length of `address` to pass to bind() and connect(). Haiku, like
+// the BSDs, has sun_len before sun_family, so the offset of sun_path is not
+// sizeof(sun_family). Paths of file sockets are passed with their terminator.
+socklen_t GetSocketAddressLength(sockaddr_un *address,
+                                 absl::string_view server_address,
+                                 size_t path_length) {
+  const size_t terminator = IsAbstractSocket(server_address) ? 0 : 1;
+  const size_t length = offsetof(sockaddr_un, sun_path) +
+                        std::min(path_length + terminator,
+                                 sizeof(address->sun_path));
+#ifdef __HAIKU__
+  address->sun_len = static_cast<uint8_t>(length);
+#endif  // __HAIKU__
+  return static_cast<socklen_t>(length);
+}
 }  // namespace
 
 // Client
@@ -265,7 +283,8 @@ void IPCClient::Init(absl::string_view name,
     address.sun_family = AF_UNIX;
     absl::SNPrintF(address.sun_path, sizeof(address.sun_path), "%s",
                    server_address);
-    const size_t sun_len = sizeof(address.sun_family) + server_address_length;
+    const socklen_t sun_len =
+        GetSocketAddressLength(&address, server_address, server_address_length);
     pid_t pid = 0;
     if (::connect(socket_, reinterpret_cast<const sockaddr *>(&address),
                   sun_len) != 0 ||
@@ -381,9 +400,13 @@ IPCServer::IPCServer(absl::string_view name, int32_t num_connections,
   int on = 1;
   ::setsockopt(socket_, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char *>(&on),
                sizeof(on));
-  const size_t sun_len = sizeof(addr.sun_family) + server_address_.size();
+  const socklen_t sun_len =
+      GetSocketAddressLength(&addr, server_address_, server_address_.size());
   if (is_file_socket) {
     // Linux does not use files for IPC.
+    // Only one server runs for a name (see ProcessMutex), so a socket file
+    // that is still there was left by a server that did not exit cleanly.
+    ::unlink(server_address_.c_str());
     ::chmod(server_address_.c_str(), 0600);
   }
   if (::bind(socket_, reinterpret_cast<sockaddr *>(&addr), sun_len) != 0) {
@@ -481,4 +504,4 @@ void IPCServer::Terminate() {
 
 }  // namespace mozc
 
-#endif  // __linux__
+#endif  // __linux__ || __HAIKU__

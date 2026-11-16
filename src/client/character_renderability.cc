@@ -182,7 +182,7 @@ CharacterRenderability::GetSupportedGroups() {
     return GetSupportedGroupsForMac(os_version.first, os_version.second);
   }
 #else   // _WIN32, __APPLE__
-  if constexpr (port::IsLinux()) {
+  if constexpr (port::IsLinux() || port::IsHaiku()) {
     return GetSupportedGroupsForLinux();
   }
   return {};
