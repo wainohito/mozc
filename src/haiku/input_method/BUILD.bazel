@@ -1,0 +1,28 @@
+# Copyright 2026 RenkuOS contributors.
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# The input method itself is built for Haiku by haiku/Makefile; Bazel only
+# builds and tests the parts that do not need the Haiku API on the host.
+
+load(
+    "//:build_defs.bzl",
+    "mozc_cc_library",
+    "mozc_cc_test",
+)
+
+mozc_cc_library(
+    name = "key_translator",
+    srcs = ["key_translator.cc"],
+    hdrs = ["key_translator.h"],
+    deps = ["//protocol:commands_cc_proto"],
+)
+
+mozc_cc_test(
+    name = "key_translator_test",
+    srcs = ["key_translator_test.cc"],
+    deps = [
+        ":key_translator",
+        "//protocol:commands_cc_proto",
+        "//testing:gunit_main",
+    ],
+)

@@ -1,0 +1,29 @@
+name			mozc
+version			@VERSION@
+architecture	x86_64
+summary			"Japanese input method"
+description		"Mozc is a Japanese input method, the open source edition of Google Japanese Input. This build is native to RenkuOS: it is an input_server method, its input modes and settings are in the Deskbar, and text is composed inline in BeAPI, Qt and GTK applications."
+packager		"RenkuOS"
+vendor			"RenkuOS"
+copyrights		{
+	"2010-2026 Google LLC"
+	"2026 RenkuOS contributors"
+}
+licenses		{
+	"BSD (3-clause)"
+}
+urls			{
+	"https://github.com/google/mozc"
+}
+flags			{
+}
+provides		{
+	mozc = @VERSION@
+	addon:mozc = @VERSION@
+	cmd:mozc_server = @VERSION@
+}
+requires		{
+	haiku
+	lib:libstdc++
+	lib:libz
+}
