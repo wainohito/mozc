@@ -118,9 +118,19 @@ addon: $(ADDON)
 # ---- mozc_tool -------------------------------------------------------------------
 
 TOOL := $(OUT)/bin/mozc_tool
-TOOL_SOURCES := dictionary_store.cc dictionary_tool_window.cc mozc_tool_main.cc \
-	tool_strings.cc word_register_window.cc
-TOOL_OWN_OBJECTS := $(patsubst %.cc,$(OBJ_DIR)/haiku/tool/%.o,$(TOOL_SOURCES))
+TOOL_SOURCES := dictionary_store.cc dictionary_tool_window.cc \
+	keymap_editor_window.cc mozc_tool_main.cc tool_strings.cc \
+	word_register_window.cc
+TOOL_OWN_OBJECTS := $(patsubst %.cc,$(OBJ_DIR)/haiku/tool/%.o,$(TOOL_SOURCES)) \
+	$(OBJ_DIR)/haiku/input_method/key_translator.o
+KEYMAP_STRINGS := $(GEN_DIR)/haiku/tool/keymap_strings.inc
+
+$(KEYMAP_STRINGS): $(MOZC_SRC)/gui/config_dialog/keymap_ja.qtts \
+		$(HAIKU_DIR)/build/gen_keymap_strings.py
+	@mkdir -p $(dir $@)
+	python3 -I $(HAIKU_DIR)/build/gen_keymap_strings.py $< $@
+
+$(OBJ_DIR)/haiku/tool/keymap_editor_window.o: $(KEYMAP_STRINGS)
 
 $(OBJ_DIR)/haiku/tool/%.o: $(HAIKU_DIR)/tool/%.cc
 	$(call COMPILE_MOZC,-DMOZC_BUILD -MMD -MP -idirafter $(HDR)/private/interface)
@@ -176,7 +186,8 @@ TOOL_TARGETS := //client:client //config:config_handler \
 	//client/user_dictionary:user_dictionary_importer \
 	//client/user_dictionary:user_dictionary_storage \
 	//data_manager:pos_list_provider //dictionary:user_dictionary_util \
-	//dictionary:user_pos //base:init_mozc //base:process
+	//dictionary:user_pos //base:init_mozc //base:process //session:keymap \
+	//composer:key_parser
 EMPTY :=
 TOOL_DEPS := $(subst $(EMPTY) $(EMPTY), + ,$(foreach t,$(TOOL_TARGETS),deps($(t))))
 

@@ -47,6 +47,11 @@ class KeyTranslator {
   KanaLayout kana_layout_ = KanaLayout::kJis;
 };
 
+// Returns `event` in the notation of Mozc keymap tables ("Ctrl a",
+// "Shift Space", "Hankaku/Zenkaku"), or an empty string if the table has
+// no notation for it.
+std::string ToKeymapString(const commands::KeyEvent& event);
+
 }  // namespace haiku
 }  // namespace mozc
 

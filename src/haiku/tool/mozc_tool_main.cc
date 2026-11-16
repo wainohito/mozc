@@ -6,6 +6,7 @@
 //
 //   mozc_tool --mode=word_register_dialog
 //   mozc_tool --mode=dictionary_tool
+//   mozc_tool --mode=keymap_editor
 //   mozc_tool --mode=about_dialog
 //   mozc_tool --mode=error_message_dialog --error_type=<type>
 
@@ -20,6 +21,7 @@
 #include "base/init_mozc.h"
 #include "base/version.h"
 #include "haiku/tool/dictionary_tool_window.h"
+#include "haiku/tool/keymap_editor_window.h"
 #include "haiku/tool/tool_strings.h"
 #include "haiku/tool/word_register_window.h"
 
@@ -42,6 +44,8 @@ class ToolApp : public BApplication {
       (new WordRegisterWindow())->Show();
     } else if (mode_ == "dictionary_tool") {
       (new DictionaryToolWindow())->Show();
+    } else if (mode_ == "keymap_editor") {
+      (new KeymapEditorWindow())->Show();
     } else if (mode_ == "error_message_dialog") {
       ShowError(absl::GetFlag(FLAGS_error_type));
       Quit();

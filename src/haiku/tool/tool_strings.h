@@ -11,6 +11,9 @@ namespace haiku {
 // preferred language of the user, `english` otherwise.
 const char* Tr(const char* english);
 
+// True when Japanese is the preferred language of the user.
+bool PrefersJapanese();
+
 }  // namespace haiku
 }  // namespace mozc
 

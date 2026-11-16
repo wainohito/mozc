@@ -8,6 +8,7 @@
 #include "haiku/input_method/key_translator.h"
 
 #include <cstdint>
+#include <iterator>
 #include <string>
 
 #include "protocol/commands.pb.h"
@@ -189,7 +190,93 @@ KeyEvent::SpecialKey SpecialKeyFromByte(uint8_t byte) {
   }
 }
 
+const char* KeymapNameOf(KeyEvent::SpecialKey key) {
+  switch (key) {
+    case KeyEvent::BACKSPACE: return "Backspace";
+    case KeyEvent::ENTER: return "Enter";
+    case KeyEvent::TAB: return "Tab";
+    case KeyEvent::ESCAPE: return "ESC";
+    case KeyEvent::SPACE: return "Space";
+    case KeyEvent::LEFT: return "Left";
+    case KeyEvent::RIGHT: return "Right";
+    case KeyEvent::UP: return "Up";
+    case KeyEvent::DOWN: return "Down";
+    case KeyEvent::INSERT: return "Insert";
+    case KeyEvent::DEL: return "Delete";
+    case KeyEvent::HOME: return "Home";
+    case KeyEvent::END: return "End";
+    case KeyEvent::PAGE_UP: return "PageUp";
+    case KeyEvent::PAGE_DOWN: return "PageDown";
+    case KeyEvent::HANKAKU: return "Hankaku/Zenkaku";
+    case KeyEvent::HENKAN: return "Henkan";
+    case KeyEvent::MUHENKAN: return "Muhenkan";
+    case KeyEvent::KANA: return "Hiragana";
+    case KeyEvent::KATAKANA: return "Katakana";
+    case KeyEvent::EISU: return "Eisu";
+    case KeyEvent::NUMPAD0: return "Numpad0";
+    case KeyEvent::NUMPAD1: return "Numpad1";
+    case KeyEvent::NUMPAD2: return "Numpad2";
+    case KeyEvent::NUMPAD3: return "Numpad3";
+    case KeyEvent::NUMPAD4: return "Numpad4";
+    case KeyEvent::NUMPAD5: return "Numpad5";
+    case KeyEvent::NUMPAD6: return "Numpad6";
+    case KeyEvent::NUMPAD7: return "Numpad7";
+    case KeyEvent::NUMPAD8: return "Numpad8";
+    case KeyEvent::NUMPAD9: return "Numpad9";
+    case KeyEvent::MULTIPLY: return "Multiply";
+    case KeyEvent::ADD: return "Add";
+    case KeyEvent::SUBTRACT: return "Subtract";
+    case KeyEvent::DECIMAL: return "Decimal";
+    case KeyEvent::DIVIDE: return "Divide";
+    default: return nullptr;
+  }
+}
+
 }  // namespace
+
+std::string ToKeymapString(const KeyEvent& event) {
+  std::string key;
+  if (event.has_special_key()) {
+    const KeyEvent::SpecialKey special = event.special_key();
+    // The values of F1 to F24 are not contiguous.
+    static constexpr KeyEvent::SpecialKey kFunctionKeys[] = {
+        KeyEvent::F1,  KeyEvent::F2,  KeyEvent::F3,  KeyEvent::F4,
+        KeyEvent::F5,  KeyEvent::F6,  KeyEvent::F7,  KeyEvent::F8,
+        KeyEvent::F9,  KeyEvent::F10, KeyEvent::F11, KeyEvent::F12,
+        KeyEvent::F13, KeyEvent::F14, KeyEvent::F15, KeyEvent::F16,
+        KeyEvent::F17, KeyEvent::F18, KeyEvent::F19, KeyEvent::F20,
+        KeyEvent::F21, KeyEvent::F22, KeyEvent::F23, KeyEvent::F24};
+    for (size_t i = 0; i < std::size(kFunctionKeys); ++i) {
+      if (special == kFunctionKeys[i]) {
+        key = "F" + std::to_string(i + 1);
+      }
+    }
+    if (!key.empty()) {
+      // A function key.
+    } else if (const char* name = KeymapNameOf(special)) {
+      key = name;
+    } else {
+      return "";
+    }
+  } else if (event.has_key_code() && IsPrintableAscii(event.key_code())) {
+    key = static_cast<char>(event.key_code());
+  } else {
+    return "";
+  }
+
+  std::string result;
+  bool ctrl = false, alt = false, shift = false;
+  for (const int modifier : event.modifier_keys()) {
+    ctrl |= modifier == KeyEvent::CTRL;
+    alt |= modifier == KeyEvent::ALT;
+    shift |= modifier == KeyEvent::SHIFT;
+  }
+  // The order of the keymap tables of Mozc.
+  if (ctrl) result += "Ctrl ";
+  if (alt) result += "Alt ";
+  if (shift) result += "Shift ";
+  return result + key;
+}
 
 bool KeyTranslator::Translate(const HaikuKey& key, KeyEvent* event) const {
   event->Clear();
@@ -222,8 +309,11 @@ bool KeyTranslator::Translate(const HaikuKey& key, KeyEvent* event) const {
     if (key.key < kF1Key || key.key > kF12Key) {
       return false;  // Print Screen, Scroll Lock, Pause.
     }
-    event->set_special_key(static_cast<KeyEvent::SpecialKey>(
-        KeyEvent::F1 + (key.key - kF1Key)));
+    static constexpr KeyEvent::SpecialKey kFunctionKeys[] = {
+        KeyEvent::F1, KeyEvent::F2, KeyEvent::F3,  KeyEvent::F4,
+        KeyEvent::F5, KeyEvent::F6, KeyEvent::F7,  KeyEvent::F8,
+        KeyEvent::F9, KeyEvent::F10, KeyEvent::F11, KeyEvent::F12};
+    event->set_special_key(kFunctionKeys[key.key - kF1Key]);
   } else {
     // The keypad produces digits and operators only while Num Lock is on;
     // otherwise it produces cursor keys, which are handled below.

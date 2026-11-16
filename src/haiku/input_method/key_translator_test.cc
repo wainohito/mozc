@@ -5,6 +5,7 @@
 
 #include <string>
 
+#include "composer/key_parser.h"
 #include "protocol/commands.pb.h"
 #include "testing/gunit.h"
 
@@ -159,6 +160,28 @@ TEST(KeyTranslatorTest, NonAsciiIsPassedThrough) {
   EXPECT_FALSE(translator.Translate(Key(0x13, "\xc3\xa9"), &event));
   // Nothing at all.
   EXPECT_FALSE(translator.Translate(Key(0x66, ""), &event));
+}
+
+TEST(KeyTranslatorTest, KeymapString) {
+  KeyTranslator translator;
+  KeyEvent event;
+  ASSERT_TRUE(translator.Translate(Key(0x41, "\x08", kControl, 'h'), &event));
+  EXPECT_EQ(ToKeymapString(event), "Ctrl h");
+  ASSERT_TRUE(translator.Translate(Key(0x5e, " ", kShift), &event));
+  EXPECT_EQ(ToKeymapString(event), "Shift Space");
+  ASSERT_TRUE(translator.Translate(Key(0x11, "\xf3"), &event));
+  EXPECT_EQ(ToKeymapString(event), "Hankaku/Zenkaku");
+  ASSERT_TRUE(translator.Translate(Key(0x0a, "\x10"), &event));
+  EXPECT_EQ(ToKeymapString(event), "F9");
+
+  // What is written can be read back by Mozc.
+  for (const char* key : {"Ctrl a", "Shift Space", "Hankaku/Zenkaku", "F9",
+                          "Ctrl Shift Space", "Muhenkan", "PageDown",
+                          "Ctrl Alt Shift Henkan", "Hiragana", "ESC"}) {
+    KeyEvent parsed;
+    ASSERT_TRUE(KeyParser::ParseKey(key, &parsed)) << key;
+    EXPECT_EQ(ToKeymapString(parsed), key);
+  }
 }
 
 }  // namespace

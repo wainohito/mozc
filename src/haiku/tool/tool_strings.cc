@@ -70,11 +70,27 @@ constexpr Entry kStrings[] = {
      "again, or restart the input_server.",
      "変換エンジンのバージョンが異なります。ログインし直すか、input_server "
      "を再起動してください。"},
+    {"Mozc key bindings", "Mozc キー設定"},
+    {"Key bindings", "キー設定"},
+    {"Start from", "既定の設定から始める"},
+    {"State", "状態"},
+    {"Key", "キー"},
+    {"Command", "コマンド"},
+    {"State:", "状態:"},
+    {"Key:", "キー:"},
+    {"Command:", "コマンド:"},
+    {"Save", "保存"},
+    {"Click, then press the key", "クリックしてからキーを押す"},
+    {"The file could not be saved.", "ファイルを保存できません。"},
+    {"The key bindings are empty. Start from MS-IME, ATOK or Kotoeri first.",
+     "キー設定が空です。先に MS-IME、ATOK、ことえりのいずれかから始めて"
+     "ください。"},
+    {"The settings could not be saved.", "設定を保存できません。"},
     {"The conversion engine stopped unexpectedly.",
      "変換エンジンが異常終了しました。"},
 };
 
-bool PrefersJapanese() {
+bool QueryPrefersJapanese() {
   BMessage languages;
   const char* language = nullptr;
   return BLocaleRoster::Default()->GetPreferredLanguages(&languages) ==
@@ -85,9 +101,13 @@ bool PrefersJapanese() {
 
 }  // namespace
 
+bool PrefersJapanese() {
+  static const bool japanese = QueryPrefersJapanese();
+  return japanese;
+}
+
 const char* Tr(const char* english) {
-  static const bool japanese = PrefersJapanese();
-  if (japanese) {
+  if (PrefersJapanese()) {
     for (const Entry& entry : kStrings) {
       if (entry.en == english) {
         return entry.ja;

@@ -9,7 +9,7 @@ cross build.
 | Directory        | Contents |
 |------------------|----------|
 | `input_method/`  | The input_server add-on (`Mozc`). Sends keys to `mozc_server`, composes text inline with `B_INPUT_METHOD_EVENT`, shows the candidate window, and keeps the input mode and the settings in the Deskbar. |
-| `tool/`          | `mozc_tool`: word registration, the dictionary tool, the about box and error messages, with the Interface Kit. |
+| `tool/`          | `mozc_tool`: word registration, the dictionary tool, the key bindings editor, the about box and error messages, with the Interface Kit. |
 | `build/`         | `gen_sources.py`, which turns a host Bazel build into the source lists of the cross build, and patches for third party code. |
 | `packaging/`     | `PackageInfo.in` of the `mozc` hpkg. |
 
@@ -54,7 +54,9 @@ Everything else is in the Deskbar: the icon shows the input mode (あ ア Ａ �
 _A, or A for direct input), and its menu has the modes, the settings used day
 to day (input style, kana layout, punctuation, symbols, space, key bindings,
 candidate selection keys, suggestions) and the tools. A setting shows its
-value; choosing it moves to the next value.
+value; choosing it moves to the next value. "Edit key bindings…" opens the
+key bindings editor, which saves a custom keymap; the menu follows changes
+of the configuration made by the tools.
 
 ## Inline input in other toolkits
 
@@ -76,5 +78,5 @@ bottom-line window and sends the result as key presses.
   `patches/renkuos/0001-...`; without it the icon shows the mode the method
   was activated in.
 * The handwriting pad, the character palette and the full configuration
-  dialog of other platforms are not ported; keymap and romaji table editing
-  need the configuration file.
+  dialog of other platforms are not ported; the romaji table can only be
+  changed in the configuration file.

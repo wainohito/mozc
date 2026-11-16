@@ -40,6 +40,7 @@ constexpr Entry kStrings[] = {
     {"Always half-width", "常に半角"},
     {"Key bindings", "キー設定"},
     {"Custom", "カスタム"},
+    {"Edit key bindings" B_UTF8_ELLIPSIS, "キー設定を編集" B_UTF8_ELLIPSIS},
     {"Candidate selection keys", "候補選択キー"},
     {"None", "なし"},
     {"Suggest from input history", "入力履歴からサジェスト"},

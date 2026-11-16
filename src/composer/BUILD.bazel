@@ -209,6 +209,7 @@ mozc_cc_library(
     visibility = [
         "//client:__pkg__",
         "//gui/config_dialog:__pkg__",
+        "//haiku:__subpackages__",
         "//session:__pkg__",
         "//unix/emacs:__pkg__",
     ],

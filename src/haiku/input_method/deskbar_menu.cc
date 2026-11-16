@@ -131,6 +131,9 @@ std::unique_ptr<BMenu> BuildDeskbarMenu(const MenuState& state) {
     }
     menu->AddItem(CycleItem(Str::kKeymap, ConfigField::kSessionKeymap,
                             keymaps, config.session_keymap()));
+    BMessage* edit_keymap = new BMessage(kMsgLaunchTool);
+    edit_keymap->AddString("mode", "keymap_editor");
+    menu->AddItem(new BMenuItem(GetString(Str::kEditKeymap), edit_keymap));
     menu->AddItem(CycleItem(
         Str::kSelectionShortcut, ConfigField::kSelectionShortcut,
         {{"1 – 9", Config::SHORTCUT_123456789},

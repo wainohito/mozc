@@ -32,6 +32,7 @@ enum class Str {
   kSpaceHalf,
   kKeymap,
   kKeymapCustom,
+  kEditKeymap,
   kSelectionShortcut,
   kSelectionShortcutNone,
   kSuggestHistory,

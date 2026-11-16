@@ -22,6 +22,7 @@ mozc_cc_test(
     srcs = ["key_translator_test.cc"],
     deps = [
         ":key_translator",
+        "//composer:key_parser",
         "//protocol:commands_cc_proto",
         "//testing:gunit_main",
     ],

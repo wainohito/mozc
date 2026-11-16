@@ -7,7 +7,10 @@
 
 #include "haiku/input_method/mozc_looper.h"
 
+#include <Directory.h>
+#include <Entry.h>
 #include <File.h>
+#include <NodeMonitor.h>
 #include <Input.h>
 #include <Menu.h>
 #include <Message.h>
@@ -18,6 +21,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "base/file_util.h"
@@ -45,6 +49,8 @@ enum : uint32 {
 
 constexpr bigtime_t kSyncInterval = 5 * 60 * 1000000LL;
 constexpr char kSettingsFile[] = "haiku_input_method.settings";
+// Where mozc_server keeps the configuration, in the user profile directory.
+constexpr char kConfigFile[] = "config1.db";
 
 void InitMozcOnce() {
   static std::once_flag once;
@@ -99,9 +105,19 @@ MozcLooper::MozcLooper(BInputServerMethod* method)
   LoadSettings();
   translator_.set_kana_layout(kana_layout_);
   candidate_window_ = new CandidateWindow(BMessenger(this));
+
+  // The tools change the configuration too (the keymap editor); follow it
+  // so that the Deskbar menu shows what is in effect.
+  const std::string profile = SystemUtil::GetUserProfileDirectory();
+  FileUtil::CreateDirectory(profile).IgnoreError();
+  node_ref profile_node;
+  if (BEntry(profile.c_str()).GetNodeRef(&profile_node) == B_OK) {
+    watch_node(&profile_node, B_WATCH_DIRECTORY, this);
+  }
 }
 
 MozcLooper::~MozcLooper() {
+  stop_watching(this);
   delete callback_runner_;
   if (candidate_window_->Lock()) {
     candidate_window_->Quit();
@@ -121,6 +137,12 @@ void MozcLooper::MessageReceived(BMessage* message) {
       break;
     case B_INPUT_METHOD_EVENT:
       HandleApplicationEvent(message);
+      break;
+    case B_NODE_MONITOR:
+      if (message->GetString("name", "") == std::string_view(kConfigFile)) {
+        RefreshConfig();
+        UpdateDeskbar();
+      }
       break;
     case kMsgMethodLoaded:
       UpdateDeskbar();
@@ -517,6 +539,8 @@ void MozcLooper::UpdateDeskbar() {
   if (!active_) {
     return;
   }
+  // The tools change the configuration too (the keymap editor).
+  RefreshConfig();
   MenuState state;
   state.mode = mode_;
   state.has_config = has_config_;
