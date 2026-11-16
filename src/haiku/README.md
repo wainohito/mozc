@@ -11,7 +11,8 @@ cross build.
 | `input_method/`  | The input_server add-on (`Mozc`). Sends keys to `mozc_server`, composes text inline with `B_INPUT_METHOD_EVENT`, shows the candidate window, and keeps the input mode and the settings in the Deskbar. |
 | `tool/`          | `mozc_tool`: word registration, the dictionary tool, the key bindings editor, the about box and error messages, with the Interface Kit. |
 | `build/`         | `gen_sources.py`, which turns a host Bazel build into the source lists of the cross build, and patches for third party code. |
-| `packaging/`     | `PackageInfo.in` of the `mozc` hpkg. |
+| `packaging/`     | `PackageInfo.in` of the `mozc` hpkg, and the installer and notes of the bundle. |
+| `patches/`       | Changes for other projects: RenkuOS (`renkuos/`, apply with `git am`) and the Qt 5 platform plugin (`qthaikuplugins/`). The Qt 6 one is in `build/patches/`. |
 
 `mozc_server` itself is the unchanged Mozc server; the platform code it needs
 is under `#if defined(__HAIKU__)` / `port::IsHaiku()` in `base/` and `ipc/`.
@@ -24,6 +25,8 @@ Makefile does the cross build:
     make -C haiku gen BAZEL=bazelisk   # once, and after updating Mozc
     make -C haiku -j8                  # mozc_server, Mozc, mozc_tool
     make -C haiku hpkg                 # out_haiku/mozc-<version>-x86_64.hpkg
+    make -C haiku bundle               # zip with Mozc, TerminalJ+, qt6_base
+                                       # and an installer
 
 `make gen` builds Mozc for Linux with Bazel, reads the compile actions with
 `bazel aquery`, and copies the generated files (protobuf code, the embedded
@@ -77,8 +80,11 @@ bottom-line window and sends the result as key presses.
 
   It needs the moc of Qt 6.10 on the host. When HaikuPorts updates
   qt6_base, the package has to be made again for the new version.
-* Qt 5: the same change for qthaikuplugins exists, but is not built yet.
+* Qt 5: the same change for qthaikuplugins is in `patches/qthaikuplugins`,
+  but is not built yet.
 * Terminal: needs `patches/renkuos/0002-...` (its inline input was disabled).
+  TerminalJ+ (https://github.com/wainohito/terminalj-plus) is Terminal with
+  that change, as a separate application.
 
 ## Known limits
 

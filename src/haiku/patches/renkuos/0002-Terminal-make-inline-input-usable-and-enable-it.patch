@@ -1,0 +1,173 @@
+From 7abe7681e460076c2f77fb3497c2af768e5286a4 Mon Sep 17 00:00:00 2001
+From: wainohito <wainohito@gmail.com>
+Date: Mon, 16 Nov 2026 14:13:38 +0900
+Subject: [PATCH 2/2] Terminal: make inline input usable and enable it
+
+TermView had inline input method support, but B_INPUT_METHOD_AWARE was
+commented out, so input methods fell back to the bottom-line window.
+The code was not usable as is:
+
+- every change waited 100 ms (a debugging snooze() left in)
+- the composed text was drawn with inverted colors and half-width
+  cells, so full-width text overlapped
+- location replies converted the same point to the screen repeatedly
+  and were one line too low
+- the cursor was drawn over the composed text
+
+Draw the composed text per character in one or two cells, underlined,
+with the selected clause inverted; reply with the top left corner of
+each character; hide the cursor while composing; erase the text when
+the input method stops; and enable B_INPUT_METHOD_AWARE.
+
+How this was tested: built Terminal from this tree and ran it on build
+00087 in qemu with the Mozc input method: composition, conversion with
+the candidate window placed below the text, commit, and exit.
+
+Assisted-by: Claude Opus 5.5
+Signed-off-by: wainohito <wainohito@gmail.com>
+---
+ src/apps/terminal/TermView.cpp | 86 +++++++++++++++++++---------------
+ 1 file changed, 48 insertions(+), 38 deletions(-)
+
+diff --git a/src/apps/terminal/TermView.cpp b/src/apps/terminal/TermView.cpp
+index 1b9a462c..23b6f80a 100644
+--- a/src/apps/terminal/TermView.cpp
++++ b/src/apps/terminal/TermView.cpp
+@@ -255,7 +255,7 @@ status_t
+ TermView::_InitObject(const ShellParameters& shellParameters)
+ {
+ 	SetFlags(Flags() | B_WILL_DRAW | B_FRAME_EVENTS
+-		| B_FULL_UPDATE_ON_RESIZE/* | B_INPUT_METHOD_AWARE*/);
++		| B_FULL_UPDATE_ON_RESIZE | B_INPUT_METHOD_AWARE);
+ 
+ 	fShell = NULL;
+ 	fWinchRunner = NULL;
+@@ -1502,10 +1502,10 @@ TermView::Draw(BRect updateRect)
+ 		}
+ 	}
+ 
+-	if (fInline && fInline->IsActive())
++	if (fInline && fInline->IsActive()) {
++		// The text being composed takes the place of the cursor.
+ 		_DrawInlineMethodString();
+-
+-	if (fCursor >= TermPos(x1, y1) && fCursor <= TermPos(x2, y2))
++	} else if (fCursor >= TermPos(x1, y1) && fCursor <= TermPos(x2, y2))
+ 		_DrawCursor();
+ }
+ 
+@@ -1819,6 +1819,8 @@ TermView::MessageReceived(BMessage *message)
+ 					case B_INPUT_METHOD_STOPPED:
+ 						delete fInline;
+ 						fInline = NULL;
++						// Erase what was being composed.
++						Invalidate();
+ 						break;
+ 
+ 					case B_INPUT_METHOD_CHANGED:
+@@ -3030,26 +3032,40 @@ TermView::_DrawInlineMethodString()
+ 	if (!fInline || !fInline->String())
+ 		return;
+ 
+-	const int32 numChars = BString(fInline->String()).CountChars();
+-
+-	BPoint startPoint = _ConvertFromTerminal(fCursor);
+-	BPoint endPoint = startPoint;
+-	endPoint.x += fFontWidth * numChars;
+-	endPoint.y += fFontHeight + 1;
+-
+-	BRect eraseRect(startPoint, endPoint);
++	// The text being composed is drawn over the cells from the cursor on,
++	// a cell per half-width character and two per full-width one, like the
++	// text of the terminal. It is underlined; the part the input method has
++	// selected (the clause being converted) is drawn inverted.
++	const char* string = fInline->String();
++	const int32 length = strlen(string);
++	const int32 selectionStart = fInline->SelectionOffset();
++	const int32 selectionEnd = selectionStart + fInline->SelectionLength();
++	const BPoint origin = _ConvertFromTerminal(fCursor);
+ 
+ 	PushState();
+-	SetHighColor(fTextForeColor);
+-	FillRect(eraseRect);
+-	PopState();
+-
+-	BPoint loc = _ConvertFromTerminal(fCursor);
+-	loc.y += fFontHeight;
+ 	SetFont(&fHalfFont);
+-	SetHighColor(fTextBackColor);
+-	SetLowColor(fTextForeColor);
+-	DrawString(fInline->String(), loc);
++	float x = origin.x;
++	for (int32 offset = 0; offset < length;) {
++		const UTF8Char character(string + offset);
++		const int32 bytes = std::min(character.ByteCount(), length - offset);
++		const float width = fFontWidth * (character.IsFullWidth() ? 2 : 1);
++		const bool selected = offset >= selectionStart
++			&& offset < selectionEnd;
++		const rgb_color fore = selected ? fTextBackColor : fTextForeColor;
++		const rgb_color back = selected ? fTextForeColor : fTextBackColor;
++
++		SetHighColor(back);
++		FillRect(BRect(x, origin.y, x + width - 1, origin.y + fFontHeight - 1));
++		SetHighColor(fore);
++		SetLowColor(back);
++		DrawString(string + offset, bytes, BPoint(x, origin.y + fFontAscent));
++		StrokeLine(BPoint(x, origin.y + fFontAscent + 1),
++			BPoint(x + width - 1, origin.y + fFontAscent + 1));
++
++		x += width;
++		offset += bytes;
++	}
++	PopState();
+ }
+ 
+ 
+@@ -3073,12 +3089,6 @@ TermView::_HandleInputMethodChanged(BMessage *message)
+ 	if (message->FindBool("be:confirmed", &confirmed) != B_OK)
+ 		confirmed = false;
+ 
+-	fInline->SetString("");
+-
+-	Invalidate();
+-	// TODO: Debug only
+-	snooze(100000);
+-
+ 	fInline->SetString(string);
+ 	fInline->ResetClauses();
+ 
+@@ -3146,20 +3156,20 @@ TermView::_HandleInputMethodLocationRequest()
+ 	BMessage message(B_INPUT_METHOD_EVENT);
+ 	message.AddInt32("be:opcode", B_INPUT_METHOD_LOCATION_REQUEST);
+ 
+-	BString string(fInline->String());
+-
+-	const int32 &limit = string.CountChars();
++	// The top left corner of every character, in screen coordinates.
++	const char* string = fInline->String();
++	const int32 length = strlen(string);
+ 	BPoint where = _ConvertFromTerminal(fCursor);
+-	where.y += fFontHeight;
++	for (int32 offset = 0; offset < length;) {
++		const UTF8Char character(string + offset);
+ 
+-	for (int32 i = 0; i < limit; i++) {
+-		// Add the location of the UTF8 characters
+-
+-		where.x += fFontWidth;
+-		ConvertToScreen(&where);
+-
+-		message.AddPoint("be:location_reply", where);
++		BPoint screenWhere = where;
++		ConvertToScreen(&screenWhere);
++		message.AddPoint("be:location_reply", screenWhere);
+ 		message.AddFloat("be:height_reply", fFontHeight);
++
++		where.x += fFontWidth * (character.IsFullWidth() ? 2 : 1);
++		offset += std::min(character.ByteCount(), length - offset);
+ 	}
+ 
+ 	fInline->Method()->SendMessage(&message);
+-- 
+2.53.0
+

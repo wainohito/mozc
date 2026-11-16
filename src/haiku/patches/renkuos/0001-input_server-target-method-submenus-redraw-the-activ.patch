@@ -1,0 +1,87 @@
+From 787b0eae349a488b396960b861e98fe13860798b Mon Sep 17 00:00:00 2001
+From: wainohito <wainohito@gmail.com>
+Date: Mon, 16 Nov 2026 14:13:38 +0900
+Subject: [PATCH 1/2] input_server: target method submenus, redraw the active
+ icon
+
+BMenu::SetTargetForItems() only reaches the items of the menu itself,
+so the items in submenus of an input method's Deskbar menu had no
+target and choosing them did nothing. Set the targets recursively.
+
+When the active method changes its icon (to show its input mode, as
+Mozc does), MethodReplicant only updated the menu item; the Deskbar
+kept showing the old icon until the method was switched. Redraw it.
+
+How this was tested: reproduced both problems with the Mozc input
+method on build 00087 in qemu; the fix is compile tested only.
+
+Assisted-by: Claude Opus 5.5
+Signed-off-by: wainohito <wainohito@gmail.com>
+---
+ src/servers/input/MethodReplicant.cpp | 29 +++++++++++++++++++++++++--
+ 1 file changed, 27 insertions(+), 2 deletions(-)
+
+diff --git a/src/servers/input/MethodReplicant.cpp b/src/servers/input/MethodReplicant.cpp
+index fbeccd0c..6e1a9510 100644
+--- a/src/servers/input/MethodReplicant.cpp
++++ b/src/servers/input/MethodReplicant.cpp
+@@ -33,6 +33,23 @@
+ #endif
+ 
+ 
++/*!	BMenu::SetTargetForItems() only reaches the items of the menu itself, so
++	the items of a method's submenus would be left without a target and their
++	messages would never reach the method.
++*/
++static void
++set_targets_recursively(BMenu* menu, const BMessenger& messenger)
++{
++	for (int32 i = 0; i < menu->CountItems(); i++) {
++		BMenuItem* item = menu->ItemAt(i);
++		if (item->Submenu() != NULL)
++			set_targets_recursively(item->Submenu(), messenger);
++		else
++			item->SetTarget(messenger);
++	}
++}
++
++
+ MethodReplicant::MethodReplicant(const char* signature)
+ 	:
+ 	BView(BRect(0, 0, 15, 15), REPLICANT_CTL_NAME, B_FOLLOW_ALL, B_WILL_DRAW),
+@@ -250,6 +267,14 @@ MethodReplicant::UpdateMethodIcon(BMessage* message)
+ 	}
+ 
+ 	item->SetIcon(data);
++
++	// The replicant shows the icon of the active method, so a method that
++	// changes its icon (to show its input mode, for example) must be redrawn.
++	if (item->IsMarked()) {
++		fSegments->SetBits(item->Icon(), kRemoteWidth * kRemoteHeight, 0,
++			kRemoteColorSpace);
++		Invalidate();
++	}
+ }
+ 
+ 
+@@ -280,7 +305,7 @@ MethodReplicant::UpdateMethodMenu(BMessage* message)
+ 	if (menu == NULL) {
+ 		PRINT(("can't instantiate menu\n"));
+ 	} else
+-		menu->SetTargetForItems(messenger);
++		set_targets_recursively(menu, messenger);
+ 
+ 	MethodMenuItem* item = FindItemByCookie(cookie);
+ 	if (item == NULL) {
+@@ -384,7 +409,7 @@ MethodReplicant::AddMethod(BMessage* message)
+ 	if (menu == NULL) {
+ 		PRINT(("can't instantiate menu\n"));
+ 	} else
+-		menu->SetTargetForItems(messenger);
++		set_targets_recursively(menu, messenger);
+ 
+ 	MethodMenuItem* item = FindItemByCookie(cookie);
+ 	if (item != NULL) {
+-- 
+2.53.0
+

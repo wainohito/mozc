@@ -1,3 +1,10 @@
+> **Mozc for RenkuOS** — this fork (branch `renkuos`) ports Mozc to
+> [RenkuOS](https://github.com/RenkuOS/source), a fork of Haiku: an
+> input_server method with its modes and settings in the Deskbar, and inline
+> conversion in BeAPI, GTK and Qt 6 applications. See
+> [`src/haiku/README.md`](src/haiku/README.md); ready-made packages are in the
+> [releases](https://github.com/wainohito/mozc/releases).
+
 [Mozc - a Japanese Input Method Editor designed for multi-platform](https://github.com/google/mozc)
 ===================================
 

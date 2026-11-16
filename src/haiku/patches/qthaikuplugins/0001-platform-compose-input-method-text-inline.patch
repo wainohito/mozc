@@ -1,0 +1,589 @@
+From ba810b5faab91daac4046de12e20bd1895000eed Mon Sep 17 00:00:00 2001
+From: wainohito <wainohito@gmail.com>
+Date: Mon, 16 Nov 2026 14:43:38 +0900
+Subject: [PATCH] platform: compose input method text inline
+
+Qt windows did not handle B_INPUT_METHOD_EVENT, so input methods such
+as Mozc fell back to the input_server bottom-line window.
+
+Add QHaikuInputContext, a QPlatformInputContext that turns the input
+method events into QInputMethodEvents (clauses underlined, the clause
+being converted highlighted, commit), answers location requests with
+the cursor rectangle, and ends the composition when Qt resets it or
+the focus moves. The surface view is marked B_INPUT_METHOD_AWARE, and
+given the focus, while the focused object accepts input methods, so
+other widgets keep the bottom-line window.
+
+Assisted-by: Claude Opus 5.5
+
+How this was tested: not built yet; ported from the Qt 6 change, which
+was tested with FeatherPad.
+
+Signed-off-by: wainohito <wainohito@gmail.com>
+---
+ platforms/qhaikuplatform/haiku/haiku.pro      |   2 +
+ .../haiku/qhaikuinputcontext.cpp              | 309 ++++++++++++++++++
+ .../qhaikuplatform/haiku/qhaikuinputcontext.h |  74 +++++
+ .../haiku/qhaikuintegration.cpp               |  12 +
+ .../qhaikuplatform/haiku/qhaikuintegration.h  |   7 +
+ .../qhaikuplatform/haiku/qhaikuwindow.cpp     |  18 +
+ platforms/qhaikuplatform/haiku/qhaikuwindow.h |   2 +
+ 7 files changed, 424 insertions(+)
+ create mode 100644 platforms/qhaikuplatform/haiku/qhaikuinputcontext.cpp
+ create mode 100644 platforms/qhaikuplatform/haiku/qhaikuinputcontext.h
+
+diff --git a/platforms/qhaikuplatform/haiku/haiku.pro b/platforms/qhaikuplatform/haiku/haiku.pro
+index cff53bf..2b1d84a 100644
+--- a/platforms/qhaikuplatform/haiku/haiku.pro
++++ b/platforms/qhaikuplatform/haiku/haiku.pro
+@@ -25,6 +25,7 @@ SOURCES =	main.cpp \
+ 			qhaikucursor.cpp \
+ 			qhaikudrag.cpp \
+ 			qhaikuglcontext.cpp \
++			qhaikuinputcontext.cpp \
+ 			qhaikuintegration.cpp \
+ 			qhaikunativeinterface.cpp \
+ 			qhaikuoffscreensurface.cpp \
+@@ -45,6 +46,7 @@ HEADERS =	qhaikuapplication.h \
+ 			qhaikucursor.h \
+ 			qhaikudrag.h \
+ 			qhaikuglcontext.h \
++			qhaikuinputcontext.h \
+ 			qhaikuintegration.h \
+ 			qhaikunativeinterface.h \
+ 			qhaikuoffscreensurface.h \
+diff --git a/platforms/qhaikuplatform/haiku/qhaikuinputcontext.cpp b/platforms/qhaikuplatform/haiku/qhaikuinputcontext.cpp
+new file mode 100644
+index 0000000..a4eb8f8
+--- /dev/null
++++ b/platforms/qhaikuplatform/haiku/qhaikuinputcontext.cpp
+@@ -0,0 +1,309 @@
++/****************************************************************************
++**
++** Copyright (C) 2026 RenkuOS contributors
++**
++** This file is part of the plugins of the Qt Toolkit.
++**
++** $QT_BEGIN_LICENSE:LGPL$
++** GNU Lesser General Public License Usage
++** This file may be used under the terms of the GNU Lesser General Public
++** License version 3 as published by the Free Software Foundation, or the
++** GNU General Public License version 2.0 or (at your option) version 3,
++** the same terms as the rest of this plugin.
++** $QT_END_LICENSE$
++**
++****************************************************************************/
++
++#include "qhaikuinputcontext.h"
++#include "qhaikuview.h"
++#include "qhaikuwindow.h"
++
++#include <QtCore/QCoreApplication>
++#include <QtCore/QList>
++#include <QtGui/QGuiApplication>
++#include <QtGui/QInputMethod>
++#include <QtGui/QInputMethodEvent>
++#include <QtGui/QPalette>
++#include <QtGui/QTextCharFormat>
++#include <QtGui/QWindow>
++
++#include <Input.h>
++#include <Message.h>
++#include <View.h>
++#include <Window.h>
++
++QT_BEGIN_NAMESPACE
++
++namespace {
++
++// The offsets of B_INPUT_METHOD_EVENT are byte offsets into UTF-8.
++int utf16Offset(const QByteArray &utf8, int32 byteOffset)
++{
++	if (byteOffset <= 0)
++		return 0;
++	if (byteOffset >= utf8.size())
++		return QString::fromUtf8(utf8).size();
++	return QString::fromUtf8(utf8.constData(), byteOffset).size();
++}
++
++int utf8CharCount(const QString &text)
++{
++	int count = 0;
++	for (const QChar c : text) {
++		if (!c.isLowSurrogate())
++			count++;
++	}
++	return count;
++}
++
++} // namespace
++
++
++QHaikuInputContext::QHaikuInputContext()
++	: m_active(false)
++{
++}
++
++
++QHaikuInputContext::~QHaikuInputContext()
++{
++}
++
++
++void QHaikuInputContext::reset()
++{
++	// Qt asks to drop the composition (a click into the text, for example).
++	// Keep what the user sees, the same as BTextView does, and tell the input
++	// method that the composition is over. Without a preedit there is nothing
++	// to end, and a stop could cross a composition the method just started.
++	if (m_preedit.isEmpty())
++		return;
++	commitPreedit(m_focusObject);
++	stopInputMethod();
++}
++
++
++void QHaikuInputContext::commit()
++{
++	reset();
++}
++
++
++void QHaikuInputContext::update(Qt::InputMethodQueries queries)
++{
++	if (queries & Qt::ImEnabled)
++		updateInputMethodAwareness();
++}
++
++
++void QHaikuInputContext::setFocusObject(QObject *object)
++{
++	if (object != m_focusObject && !m_preedit.isEmpty()) {
++		commitPreedit(m_focusObject);
++		stopInputMethod();
++	}
++	m_focusObject = object;
++	updateInputMethodAwareness();
++}
++
++
++void QHaikuInputContext::handleInputMethodMessage(QHaikuWindow *window,
++	const BMessage *message)
++{
++	int32 opcode;
++	if (message->FindInt32("be:opcode", &opcode) != B_OK)
++		return;
++
++	switch (opcode) {
++		case B_INPUT_METHOD_STARTED:
++			if (message->FindMessenger("be:reply_to", &m_method) == B_OK)
++				m_active = true;
++			m_preedit.clear();
++			break;
++		case B_INPUT_METHOD_CHANGED:
++			handleChanged(message);
++			break;
++		case B_INPUT_METHOD_STOPPED:
++			handleStopped();
++			break;
++		case B_INPUT_METHOD_LOCATION_REQUEST:
++			handleLocationRequest(window);
++			break;
++	}
++}
++
++
++void QHaikuInputContext::handleChanged(const BMessage *message)
++{
++	QObject *target = QGuiApplication::focusObject();
++	if (target == nullptr)
++		return;
++
++	const char *string = nullptr;
++	if (message->FindString("be:string", &string) != B_OK || string == nullptr)
++		string = "";
++	const QByteArray utf8(string);
++	const QString text = QString::fromUtf8(utf8);
++
++	bool confirmed;
++	if (message->FindBool("be:confirmed", &confirmed) != B_OK)
++		confirmed = false;
++
++	if (confirmed) {
++		QInputMethodEvent event;
++		event.setCommitString(text);
++		QCoreApplication::sendEvent(target, &event);
++		m_preedit.clear();
++		return;
++	}
++
++	QList<QInputMethodEvent::Attribute> attributes;
++
++	// Clauses are underlined, the clause being converted is highlighted.
++	QTextCharFormat clauseFormat;
++	clauseFormat.setUnderlineStyle(QTextCharFormat::SingleUnderline);
++	int32 clauseStart;
++	int32 clauseEnd;
++	for (int32 i = 0;
++		message->FindInt32("be:clause_start", i, &clauseStart) == B_OK
++			&& message->FindInt32("be:clause_end", i, &clauseEnd) == B_OK;
++		i++) {
++		const int start = utf16Offset(utf8, clauseStart);
++		const int end = utf16Offset(utf8, clauseEnd);
++		if (end > start) {
++			attributes << QInputMethodEvent::Attribute(
++				QInputMethodEvent::TextFormat, start, end - start, clauseFormat);
++		}
++	}
++	if (attributes.isEmpty() && !text.isEmpty()) {
++		attributes << QInputMethodEvent::Attribute(
++			QInputMethodEvent::TextFormat, 0, text.size(), clauseFormat);
++	}
++
++	int cursor = text.size();
++	bool cursorVisible = true;
++	int32 selectionStart;
++	int32 selectionEnd;
++	if (message->FindInt32("be:selection", 0, &selectionStart) == B_OK
++		&& message->FindInt32("be:selection", 1, &selectionEnd) == B_OK) {
++		const int start = utf16Offset(utf8, selectionStart);
++		const int end = utf16Offset(utf8, selectionEnd);
++		cursor = start;
++		if (end > start) {
++			const QPalette palette = QGuiApplication::palette();
++			QTextCharFormat selectionFormat;
++			selectionFormat.setBackground(palette.highlight());
++			selectionFormat.setForeground(palette.highlightedText());
++			attributes << QInputMethodEvent::Attribute(
++				QInputMethodEvent::TextFormat, start, end - start,
++				selectionFormat);
++			// The highlight shows where the user is; a caret would only
++			// distract while a clause is being converted.
++			cursorVisible = false;
++		}
++	}
++	attributes << QInputMethodEvent::Attribute(QInputMethodEvent::Cursor,
++		cursor, cursorVisible ? 1 : 0, QVariant());
++
++	QInputMethodEvent event(text, attributes);
++	QCoreApplication::sendEvent(target, &event);
++	m_preedit = text;
++}
++
++
++void QHaikuInputContext::handleStopped()
++{
++	// An input method that stops without confirming leaves its text in place,
++	// as BTextView does.
++	commitPreedit(QGuiApplication::focusObject());
++	m_method = BMessenger();
++	m_active = false;
++}
++
++
++void QHaikuInputContext::handleLocationRequest(QHaikuWindow *window)
++{
++	if (!m_active || !m_method.IsValid())
++		return;
++
++	QWindow *qwindow = window != nullptr ? window->window() : nullptr;
++	if (qwindow == nullptr)
++		qwindow = QGuiApplication::focusWindow();
++	if (qwindow == nullptr)
++		return;
++
++	// The cursor attribute of the preedit is put at the clause being
++	// converted, so the cursor rectangle is where the candidates belong.
++	const QRectF rect = QGuiApplication::inputMethod()->cursorRectangle();
++	const qreal ratio = qwindow->devicePixelRatio();
++	const QPoint topLeft = qwindow->mapToGlobal(rect.topLeft().toPoint());
++
++	BMessage reply(B_INPUT_METHOD_EVENT);
++	reply.AddInt32("be:opcode", B_INPUT_METHOD_LOCATION_REQUEST);
++	// One location per character is expected; Qt only knows the cursor.
++	const int count = qMax(1, utf8CharCount(m_preedit));
++	for (int i = 0; i < count; i++) {
++		reply.AddPoint("be:location_reply",
++			BPoint(topLeft.x() * ratio, topLeft.y() * ratio));
++		reply.AddFloat("be:height_reply", rect.height() * ratio);
++	}
++	m_method.SendMessage(&reply);
++}
++
++
++void QHaikuInputContext::commitPreedit(QObject *target)
++{
++	if (m_preedit.isEmpty())
++		return;
++	if (target != nullptr) {
++		QInputMethodEvent event;
++		event.setCommitString(m_preedit);
++		QCoreApplication::sendEvent(target, &event);
++	}
++	m_preedit.clear();
++}
++
++
++void QHaikuInputContext::stopInputMethod()
++{
++	if (m_active && m_method.IsValid()) {
++		BMessage message(B_INPUT_METHOD_EVENT);
++		message.AddInt32("be:opcode", B_INPUT_METHOD_STOPPED);
++		m_method.SendMessage(&message);
++	}
++	m_method = BMessenger();
++	m_active = false;
++}
++
++
++void QHaikuInputContext::updateInputMethodAwareness()
++{
++	QWindow *qwindow = QGuiApplication::focusWindow();
++	if (qwindow == nullptr || qwindow->handle() == nullptr)
++		return;
++
++	QHaikuSurfaceView *view = QHaikuWindow::viewForWinId(qwindow->winId());
++	if (view == nullptr || !view->LockLooper())
++		return;
++
++	const bool aware = inputMethodAccepted();
++	const uint32 flags = view->Flags();
++	const bool changed = ((flags & B_INPUT_METHOD_AWARE) != 0) != aware;
++	if (changed) {
++		view->SetFlags(aware ? flags | B_INPUT_METHOD_AWARE
++			: flags & ~B_INPUT_METHOD_AWARE);
++	}
++	// The input_server learns about the flag when the focus view of the
++	// window changes. Qt does not otherwise give the view the focus: keys
++	// reach the window either way.
++	if (!view->IsFocus()) {
++		if (aware)
++			view->MakeFocus(true);
++	} else if (changed) {
++		view->MakeFocus(false);
++		view->MakeFocus(true);
++	}
++	view->UnlockLooper();
++}
++
++QT_END_NAMESPACE
+diff --git a/platforms/qhaikuplatform/haiku/qhaikuinputcontext.h b/platforms/qhaikuplatform/haiku/qhaikuinputcontext.h
+new file mode 100644
+index 0000000..a2f91e8
+--- /dev/null
++++ b/platforms/qhaikuplatform/haiku/qhaikuinputcontext.h
+@@ -0,0 +1,74 @@
++/****************************************************************************
++**
++** Copyright (C) 2026 RenkuOS contributors
++**
++** This file is part of the plugins of the Qt Toolkit.
++**
++** $QT_BEGIN_LICENSE:LGPL$
++** GNU Lesser General Public License Usage
++** This file may be used under the terms of the GNU Lesser General Public
++** License version 3 as published by the Free Software Foundation, or the
++** GNU General Public License version 2.0 or (at your option) version 3,
++** the same terms as the rest of this plugin.
++** $QT_END_LICENSE$
++**
++****************************************************************************/
++
++#ifndef QHAIKUINPUTCONTEXT_H
++#define QHAIKUINPUTCONTEXT_H
++
++#include <qpa/qplatforminputcontext.h>
++
++#include <QtCore/QPointer>
++#include <QtCore/QString>
++
++#include <Messenger.h>
++
++class BMessage;
++
++QT_BEGIN_NAMESPACE
++
++class QHaikuWindow;
++
++// Bridges the input methods of the input_server (B_INPUT_METHOD_EVENT) to
++// Qt, so that Japanese, Chinese and Korean text can be composed inline in
++// Qt widgets.
++//
++// Views of Qt windows are only marked B_INPUT_METHOD_AWARE while the focused
++// object accepts input method events; for anything else the input_server
++// keeps using its bottom-line window, which sends the result as key presses.
++class QHaikuInputContext : public QPlatformInputContext
++{
++	Q_OBJECT
++public:
++	QHaikuInputContext();
++	~QHaikuInputContext() override;
++
++	bool isValid() const override { return true; }
++
++	void reset() override;
++	void commit() override;
++	void update(Qt::InputMethodQueries queries) override;
++	void setFocusObject(QObject *object) override;
++
++	// Called in the GUI thread for every B_INPUT_METHOD_EVENT that reached
++	// a Qt window.
++	void handleInputMethodMessage(QHaikuWindow *window, const BMessage *message);
++
++private:
++	void handleChanged(const BMessage *message);
++	void handleStopped();
++	void handleLocationRequest(QHaikuWindow *window);
++	void commitPreedit(QObject *target);
++	void stopInputMethod();
++	void updateInputMethodAwareness();
++
++	QPointer<QObject> m_focusObject;
++	BMessenger m_method;
++	QString m_preedit;
++	bool m_active;
++};
++
++QT_END_NAMESPACE
++
++#endif
+diff --git a/platforms/qhaikuplatform/haiku/qhaikuintegration.cpp b/platforms/qhaikuplatform/haiku/qhaikuintegration.cpp
+index b98b5b1..9c41673 100644
+--- a/platforms/qhaikuplatform/haiku/qhaikuintegration.cpp
++++ b/platforms/qhaikuplatform/haiku/qhaikuintegration.cpp
+@@ -53,6 +53,7 @@
+ #include <qpa/qplatformopenglcontext.h>
+ 
+ #include "qhaikuintegration.h"
++#include "qhaikuinputcontext.h"
+ #include "qhaikudrag.h"
+ 
+ #include <GLView.h>
+@@ -77,6 +78,7 @@ QHaikuIntegration::QHaikuIntegration(const QStringList &parameters, int &argc, c
+ 	m_clipboard = new QHaikuClipboard();
+ 	m_haikuSystemLocale = new QHaikuSystemLocale;
+ 	m_drag = new QHaikuDrag();
++	m_inputContext.reset(new QHaikuInputContext());
+ 	m_openGlEnabled = isOpenGLEnabled();
+ }
+ 
+@@ -360,4 +362,14 @@ QPlatformServices *QHaikuIntegration::services() const
+     return m_services;
+ }
+ 
++QPlatformInputContext *QHaikuIntegration::inputContext() const
++{
++	return m_inputContext.data();
++}
++
++QPlatformInputContext *QHaikuIntegration::inputContext() const
++{
++	return m_inputContext.data();
++}
++
+ QT_END_NAMESPACE
+diff --git a/platforms/qhaikuplatform/haiku/qhaikuintegration.h b/platforms/qhaikuplatform/haiku/qhaikuintegration.h
+index 3385918..579f74f 100644
+--- a/platforms/qhaikuplatform/haiku/qhaikuintegration.h
++++ b/platforms/qhaikuplatform/haiku/qhaikuintegration.h
+@@ -41,6 +41,10 @@
+ #ifndef QHAIKUINTEGRATION_H
+ #define QHAIKUINTEGRATION_H
+ 
++#include <qpa/qplatforminputcontext.h>
++#include <QtCore/QScopedPointer>
++#include <qpa/qplatforminputcontext.h>
++#include <QtCore/QScopedPointer>
+ #include <qpa/qplatformintegration.h>
+ #include <qpa/qplatformopenglcontext.h>
+ #include <qscopedpointer.h>
+@@ -86,6 +90,7 @@ public:
+     QHaikuScreen *screen() { return m_screen; }
+ 
+     QPlatformFontDatabase *fontDatabase() const;
++    QPlatformInputContext *inputContext() const override;
+     QAbstractEventDispatcher *createEventDispatcher() const;
+     QPlatformNativeInterface *nativeInterface() const { return m_nativeInterface; }
+ 
+@@ -105,6 +110,8 @@ private:
+     QHaikuSystemLocale *m_haikuSystemLocale;
+     QHaikuScreen *m_screen;
+     mutable QHaikuClipboard* m_clipboard;
++    QScopedPointer<QPlatformInputContext> m_inputContext;
++    QScopedPointer<QPlatformInputContext> m_inputContext;
+     bool m_openGlEnabled;
+ private Q_SLOTS:
+ 	bool platformAppQuit();
+diff --git a/platforms/qhaikuplatform/haiku/qhaikuwindow.cpp b/platforms/qhaikuplatform/haiku/qhaikuwindow.cpp
+index 928b9b9..168d940 100644
+--- a/platforms/qhaikuplatform/haiku/qhaikuwindow.cpp
++++ b/platforms/qhaikuplatform/haiku/qhaikuwindow.cpp
+@@ -39,6 +39,7 @@
+ ****************************************************************************/
+ 
+ #include "qhaikuwindow.h"
++#include "qhaikuinputcontext.h"
+ #include "qhaikukeymap.h"
+ #include "qhaikusettings.h"
+ 
+@@ -183,6 +184,10 @@ void QtHaikuWindow::DispatchMessage(BMessage *msg, BHandler *handler)
+ 				Q_EMIT keyEvent(press ? QEvent::KeyPress : QEvent::KeyRelease, qt_keycode, fView->hostToQtModifiers(modifiers), text);
+ 				break;
+ 			}
++		case B_INPUT_METHOD_EVENT:
++			// Handled in the GUI thread, in order with the key events.
++			Q_EMIT inputMethodEvent(new BMessage(*msg));
++			return;
+ 		default:
+ 			break;
+ 	}
+@@ -328,6 +333,9 @@ QHaikuWindow::QHaikuWindow(QWindow *wnd)
+ 		this, SLOT(platformWheelEvent(QPoint, QPoint, int, Qt::Orientation, Qt::KeyboardModifiers)));
+ 	connect(m_window, SIGNAL(keyEvent(QEvent::Type, int, Qt::KeyboardModifiers, QString)),
+ 		this, SLOT(platformKeyEvent(QEvent::Type, int, Qt::KeyboardModifiers, QString)));
++	qRegisterMetaType<BMessage*>("BMessage*");
++	connect(m_window, SIGNAL(inputMethodEvent(BMessage*)),
++		this, SLOT(platformInputMethodEvent(BMessage*)));
+ 
+ 	connect(m_window->View(), SIGNAL(enteredView()), this, SLOT(platformEnteredView()));
+ 	connect(m_window->View(), SIGNAL(exitedView()), this, SLOT(platformExitedView()));
+@@ -936,6 +944,16 @@ BRegion QHaikuWindow::getClippingRegion()
+ }
+ 
+ 
++void QHaikuWindow::platformInputMethodEvent(BMessage *message)
++{
++	QHaikuInputContext *context = qobject_cast<QHaikuInputContext*>(
++		QGuiApplicationPrivate::platformIntegration()->inputContext());
++	if (context != nullptr)
++		context->handleInputMethodMessage(this, message);
++	delete message;
++}
++
++
+ void QHaikuWindow::platformWindowQuitRequested()
+ {
+     QWindowSystemInterface::handleCloseEvent(window());
+diff --git a/platforms/qhaikuplatform/haiku/qhaikuwindow.h b/platforms/qhaikuplatform/haiku/qhaikuwindow.h
+index 431621d..516d0d9 100644
+--- a/platforms/qhaikuplatform/haiku/qhaikuwindow.h
++++ b/platforms/qhaikuplatform/haiku/qhaikuwindow.h
+@@ -112,6 +112,7 @@ Q_SIGNALS:
+ 		int key,
+ 		Qt::KeyboardModifiers modifiers,
+ 		const QString &text);
++	void inputMethodEvent(BMessage *message);
+ };
+ 
+ class QHaikuWindow : public QObject, public QPlatformWindow
+@@ -190,6 +191,7 @@ private:
+ 	BBitmap *m_openGLBufferBitmap;
+ 	BBitmap *m_openGLRenderBitmap;
+ private Q_SLOTS:
++	void platformInputMethodEvent(BMessage *message);
+ 	void platformWindowQuitRequested();
+ 	void platformWindowMoved(const QPoint &pos);
+ 	void platformWindowResized(const QSize &size);
+-- 
+2.53.0
+
