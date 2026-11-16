@@ -67,9 +67,17 @@ bottom-line window and sends the result as key presses.
 * BeAPI: every `BTextView` (StyledEdit, Mail, text fields, ...).
 * GTK 3: through the Wayland compatibility layer (`wayland_server`), which
   turns the input method events into text-input-v3.
-* Qt 5 and Qt 6: need the patches in `patches/qthaikuplugins` and
-  `patches/qt6-haikuplugins` of this port, which add an input context to the
-  Haiku platform plugins.
+* Qt 6: needs the Haiku platform plugin with the patch in
+  `build/patches/qt6-haikuplugins-*`. `build/build_qt6_base.sh` makes a
+  qt6_base package that is the HaikuPorts one with only that plugin
+  replaced (version 6.10.3.1-1, so it is kept over 6.10.3-3):
+
+      haiku/build/build_qt6_base.sh <work dir> out_haiku
+      pkgman install qt6_base-6.10.3.1-1-x86_64.hpkg
+
+  It needs the moc of Qt 6.10 on the host. When HaikuPorts updates
+  qt6_base, the package has to be made again for the new version.
+* Qt 5: the same change for qthaikuplugins exists, but is not built yet.
 * Terminal: needs `patches/renkuos/0002-...` (its inline input was disabled).
 
 ## Known limits
