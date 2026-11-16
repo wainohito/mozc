@@ -175,6 +175,28 @@ $(HPKG): $(SERVER) $(ADDON) $(TOOL) $(HAIKU_DIR)/packaging/PackageInfo.in
 
 hpkg: $(HPKG)
 
+# ---- bundle -----------------------------------------------------------------------
+# Mozc, TerminalJ+ and the qt6_base with inline input, with an installer.
+#   make bundle TERMINALJ=<terminalj project> QT6_BASE=<qt6_base hpkg>
+
+TERMINALJ ?= $(HOME)/renkuapp/terminalj
+QT6_BASE ?= $(OUT)/qt6_base-6.10.3.1-1-x86_64.hpkg
+BUNDLE_NAME := Mozc-for-RenkuOS-$(MOZC_VERSION)
+BUNDLE := $(OUT)/$(BUNDLE_NAME).zip
+
+bundle: $(HPKG)
+	$(MAKE) -C $(TERMINALJ) hpkg
+	rm -rf $(OUT)/bundle $(BUNDLE)
+	mkdir -p "$(OUT)/bundle/$(BUNDLE_NAME)"
+	cp $(HPKG) $(TERMINALJ)/build/terminalj_plus-*-x86_64.hpkg $(QT6_BASE) \
+		"$(OUT)/bundle/$(BUNDLE_NAME)/"
+	install -m 755 $(HAIKU_DIR)/packaging/bundle/install.sh \
+		"$(OUT)/bundle/$(BUNDLE_NAME)/インストール"
+	cp $(HAIKU_DIR)/packaging/bundle/README.txt \
+		"$(OUT)/bundle/$(BUNDLE_NAME)/はじめにお読みください.txt"
+	cd $(OUT)/bundle && zip -qry ../$(BUNDLE_NAME).zip $(BUNDLE_NAME)
+	@echo "-> $(BUNDLE)"
+
 endif
 
 # ---- host preparation -----------------------------------------------------------
@@ -209,4 +231,4 @@ gen:
 clean:
 	rm -rf $(OBJ_DIR) $(OUT)/bin $(OUT)/hpkg
 
-.PHONY: all gen server addon tool hpkg clean
+.PHONY: all gen server addon tool hpkg bundle clean
