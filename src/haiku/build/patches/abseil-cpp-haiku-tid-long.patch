@@ -1,0 +1,13 @@
+--- a/absl/log/internal/log_message.cc	2026-11-19 00:50:51.127895112 +0900
++++ b/absl/log/internal/log_message.cc	2026-11-19 00:50:51.129565614 +0900
+@@ -227,7 +227,9 @@
+   EncodeVarint(EventTag::kSeverity,
+                ProtoSeverity(entry.log_severity(), entry.verbosity()),
+                &encoded_remaining());
+-  EncodeVarint(EventTag::kThreadId, entry.tid(), &encoded_remaining());
++  // Tid is pid_t, which is long on 32-bit Haiku and matches no overload.
++  EncodeVarint(EventTag::kThreadId, static_cast<int64_t>(entry.tid()),
++               &encoded_remaining());
+ }
+ 
+ void LogMessage::LogMessageData::FinalizeEncodingAndFormat() {

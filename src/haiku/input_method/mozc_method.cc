@@ -8,6 +8,7 @@
 #include <Message.h>
 
 #include "haiku/input_method/messages.h"
+#include "haiku/input_method/method_host.h"
 #include "haiku/input_method/mode_icon.h"
 #include "haiku/input_method/mozc_looper.h"
 
@@ -30,10 +31,33 @@ const ModeIcon& InitialIcon() {
   return icon;
 }
 
+// The method itself is the host of the looper when both are in the
+// input_server.
+class InputServerMethodHost : public MethodHost {
+ public:
+  explicit InputServerMethodHost(BInputServerMethod* method)
+      : method_(method) {}
+
+  status_t EnqueueMessage(BMessage* message) override {
+    return method_->EnqueueMessage(message);
+  }
+  status_t SetIcon(const uchar* icon) override {
+    return method_->SetIcon(icon);
+  }
+  status_t SetMenu(const BMenu* menu, BMessenger target) override {
+    return method_->SetMenu(menu, target);
+  }
+
+ private:
+  BInputServerMethod* method_;
+};
+
 }  // namespace
 
 MozcMethod::MozcMethod()
-    : BInputServerMethod("Mozc", InitialIcon().data()), looper_(nullptr) {}
+    : BInputServerMethod("Mozc", InitialIcon().data()),
+      host_(new InputServerMethodHost(this)),
+      looper_(nullptr) {}
 
 MozcMethod::~MozcMethod() {
   SetMenu(nullptr, BMessenger());
@@ -42,11 +66,12 @@ MozcMethod::~MozcMethod() {
     looper_->QuitRequested();
     looper_->Quit();
   }
+  delete host_;
 }
 
 status_t MozcMethod::InitCheck() {
   if (looper_ == nullptr) {
-    looper_ = new MozcLooper(this);
+    looper_ = new MozcLooper(host_);
     looper_->Run();
     messenger_ = BMessenger(looper_);
     messenger_.SendMessage(kMsgMethodLoaded);

@@ -453,6 +453,11 @@ void IPCServer::Loop() {
   while (!error && !terminate_.HasBeenNotified()) {
     const int new_sock = ::accept(socket_, nullptr, nullptr);
     if (new_sock < 0) {
+      // A signal or a client that went away before it was accepted is no
+      // reason to stop serving.
+      if (errno == EINTR || errno == ECONNABORTED) {
+        continue;
+      }
       LOG(FATAL) << "accept() failed: " << strerror(errno);
       return;
     }

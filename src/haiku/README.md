@@ -56,6 +56,32 @@ The unit tests that run on the host:
 
     bazelisk test --config oss_linux //haiku/input_method:key_translator_test
 
+## 32-bit (x86_gcc2 hybrid)
+
+The input_server of an x86_gcc2 hybrid is built with gcc 2 and can only
+load gcc 2 add-ons, so Mozc is split in two there:
+
+* `relay/`: the input_server add-on `Mozc`, built with gcc 2 (C++98). It
+  starts `mozc_im`, hands it the keys and makes the `BInputServerMethod`
+  calls it asks for (`input_method/relay_protocol.h`).
+* `mozc_im` (`input_method/mozc_im_main.cc`): the method itself -- the
+  `MozcLooper`, the candidate window and the Deskbar menu, unchanged -- as a
+  background application built for the x86 secondary architecture, in
+  `lib/x86/mozc` next to `mozc_server` and `mozc_tool`. The looper reaches
+  the method through `MethodHost` (`input_method/method_host.h`), which is the
+  method itself on x86_64.
+
+`mozc_im` is started with the input_server only when the first preferred
+language is Japanese; otherwise nothing of Mozc runs until it is chosen as
+the input method.
+
+    make -C haiku ARCH=x86_gcc2h GEN=<tree>/generated.x86_gcc2h -j8 hpkg
+    ARCH=x86_gcc2h GEN=... build/build_qt6_base.sh <work dir> <out dir>
+    ARCH=x86_gcc2h GEN=... build/build_qthaikuplugins.sh <work dir> <out dir>
+
+make the `mozc`, `qt6_base_x86` and `qthaikuplugins_x86` packages of
+architecture `x86_gcc2`; `make gen` is shared with x86_64.
+
 ## Installed files
 
     add-ons/input_server/methods/Mozc

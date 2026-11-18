@@ -402,7 +402,7 @@ bool IPCPathManager::IsValidServer(uint32_t pid,
   // The executable is the B_APP_IMAGE of the server team.
   bool found = false;
   image_info info;
-  int32_t cookie = 0;
+  int32 cookie = 0;  // long on 32-bit x86, so not int32_t
   while (get_next_image_info(static_cast<team_id>(pid), &cookie, &info) ==
          B_OK) {
     if (info.type == B_APP_IMAGE) {

@@ -14,11 +14,11 @@
 
 #include "client/client_interface.h"
 #include "haiku/input_method/key_translator.h"
+#include "haiku/input_method/method_host.h"
 #include "protocol/candidate_window.pb.h"
 #include "protocol/commands.pb.h"
 #include "protocol/config.pb.h"
 
-class BInputServerMethod;
 class BMessageRunner;
 
 namespace mozc {
@@ -35,7 +35,7 @@ class CandidateWindow;
 // Mozc has no use for go back to the input_server unchanged.
 class MozcLooper : public BLooper {
  public:
-  explicit MozcLooper(BInputServerMethod* method);
+  explicit MozcLooper(MethodHost* method);
   ~MozcLooper() override;
 
   void MessageReceived(BMessage* message) override;
@@ -71,7 +71,7 @@ class MozcLooper : public BLooper {
   void LoadSettings();
   void SaveSettings() const;
 
-  BInputServerMethod* method_;
+  MethodHost* method_;  // Not owned.
   std::unique_ptr<client::ClientInterface> client_;
   KeyTranslator translator_;
   CandidateWindow* candidate_window_;

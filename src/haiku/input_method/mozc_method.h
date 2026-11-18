@@ -11,6 +11,7 @@ namespace mozc {
 namespace haiku {
 
 class MozcLooper;
+class MethodHost;
 
 // The input_server add-on. It hands key presses to the MozcLooper, which
 // does everything else in its own thread.
@@ -24,6 +25,7 @@ class MozcMethod : public BInputServerMethod {
   status_t MethodActivated(bool active) override;
 
  private:
+  MethodHost* host_;
   MozcLooper* looper_;
   BMessenger messenger_;
 };

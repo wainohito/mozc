@@ -16,7 +16,6 @@
 #include <Message.h>
 #include <MessageRunner.h>
 #include <Messenger.h>
-#include <add-ons/input_server/InputServerMethod.h>
 
 #include <memory>
 #include <mutex>
@@ -90,7 +89,7 @@ std::string SettingsPath() {
 
 }  // namespace
 
-MozcLooper::MozcLooper(BInputServerMethod* method)
+MozcLooper::MozcLooper(MethodHost* method)
     : BLooper("Mozc input method"),
       method_(method),
       candidate_window_(nullptr),
@@ -151,6 +150,9 @@ void MozcLooper::MessageReceived(BMessage* message) {
       }
       break;
     case kMsgMethodLoaded:
+      // Also sent when mozc_im gets a new relay add-on (the input_server
+      // was restarted), which knows no icon yet.
+      shown_mode_ = commands::NUM_OF_COMPOSITIONS;
       UpdateDeskbar();
       break;
     case kMsgMethodActivated:

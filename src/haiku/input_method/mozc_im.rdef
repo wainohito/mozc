@@ -1,0 +1,10 @@
+/*
+ * Copyright 2026 RenkuOS contributors.
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
+
+resource app_signature "application/x-vnd.RenkuOS-mozc-im";
+
+/* Started by the relay add-on in the input_server; not shown in the Deskbar,
+   and a second launch hands its message to the running one. */
+resource app_flags B_SINGLE_LAUNCH | B_BACKGROUND_APP;
