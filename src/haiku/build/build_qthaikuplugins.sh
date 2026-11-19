@@ -25,14 +25,15 @@ set -euo pipefail
 WORK=$(realpath -m "$1")
 OUT=$(realpath -m "$2")
 HERE=$(dirname "$(realpath "$0")")
-PATCH=$(realpath "$HERE/../patches/qthaikuplugins/0001-platform-compose-input-method-text-inline.patch")
+# The changes of this port, applied in order.
+PATCHES=$(ls "$(realpath "$HERE/../patches/qthaikuplugins")"/*.patch)
 
 QT_VERSION=5.15.19
 QT_REVISION=2
 PLUGINS_VERSION=5.15.16.0
 PLUGINS_REVISION=1
 PLUGINS_REV=8af8224255962a707d8c6d87d8f5082824b1d819
-NEW_VERSION=$PLUGINS_VERSION.1-1
+NEW_VERSION=$PLUGINS_VERSION.3-1
 
 ARCH=${ARCH:-x86_64}
 RENKU=${RENKU:-$HOME/renku}
@@ -119,7 +120,7 @@ done
 if [ ! -d src ]; then
 	git clone -q https://github.com/threedeyes/qthaikuplugins.git src
 	git -C src checkout -q $PLUGINS_REV
-	git -C src apply "$PATCH"
+	for p in $PATCHES; do git -C src apply "$p"; done
 fi
 
 # ---- build ------------------------------------------------------------------------
@@ -186,7 +187,7 @@ install -m 755 "$PLUGIN" "$STAGE/$PLUGIN_DIR/libqhaiku.so"
 $ADDATTR -t mime BEOS:TYPE application/x-vnd.Be-elfexecutable \
 	"$STAGE/$PLUGIN_DIR/libqhaiku.so"
 # The source of the change, as the LGPL asks.
-cp "$PATCH" "$STAGE/$DOC_DIR/"
+cp $PATCHES "$STAGE/$DOC_DIR/"
 sed -e "s/^version\t.*/version\t\t\t$NEW_VERSION/" \
 	-e "s/^packager\t.*/packager\t\t\"RenkuOS\"/" \
 	-e 's/^\(summary\t*\)"\(.*\)"/\1"\2 (inline input methods)"/' \

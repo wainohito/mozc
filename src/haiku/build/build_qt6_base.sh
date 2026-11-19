@@ -24,13 +24,14 @@ set -euo pipefail
 WORK=$(realpath -m "$1")
 OUT=$(realpath -m "$2")
 HERE=$(dirname "$(realpath "$0")")
-PATCH=$HERE/patches/qt6-haikuplugins-0001-platform-compose-input-method-text-inline.patch
+# The changes of this port, applied in order.
+PATCHES=$(ls "$HERE"/patches/qt6-haikuplugins-*.patch)
 
 QT_VERSION=6.10.3
 QT_REVISION=3
 PLUGINS_REV=1d255f2f8e58d66c1d3f2fc12cf651e4ca0aa80d
 HAIKUPORTS_REV=master
-NEW_VERSION=$QT_VERSION.1-1
+NEW_VERSION=$QT_VERSION.2-1
 
 ARCH=${ARCH:-x86_64}
 RENKU=${RENKU:-$HOME/renku}
@@ -111,7 +112,7 @@ if [ ! -d src ]; then
 	curl -fsSL -o haikuports.patchset \
 		"https://raw.githubusercontent.com/haikuports/haikuports/$HAIKUPORTS_REV/dev-qt/qt6-base/patches/qt6_base-$QT_VERSION-source2.patchset"
 	git -C src apply ../haikuports.patchset
-	git -C src apply "$PATCH"
+	for p in $PATCHES; do git -C src apply "$p"; done
 fi
 
 # ---- build ------------------------------------------------------------------------
@@ -169,7 +170,7 @@ install -m 755 "$PLUGIN" "$STAGE/$PLUGIN_DIR/libqhaiku.so"
 $ADDATTR -t mime BEOS:TYPE application/x-vnd.Be-elfexecutable \
 	"$STAGE/$PLUGIN_DIR/libqhaiku.so"
 # The source of the change, as the LGPL and the GPL ask.
-cp "$PATCH" "$STAGE/$DOC_DIR/"
+cp $PATCHES "$STAGE/$DOC_DIR/"
 sed -e "s/^version\t.*/version\t\t\t$NEW_VERSION/" \
 	-e "s/^packager\t.*/packager\t\t\"RenkuOS\"/" \
 	-e 's/^\(summary\t*\)"\(.*\)"/\1"\2 (inline input methods)"/' \

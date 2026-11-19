@@ -14,8 +14,8 @@ Mozc の Qt 6 / Qt 5 対応
     - Qt 5 が入っていれば qthaikuplugins_x86（Qt 5 対応）を入れます。
 
   ターミナルから入れる場合:
-    pkgman install qt6_base_x86-6.10.3.1-1-x86_gcc2.hpkg
-    pkgman install qthaikuplugins_x86-5.15.16.0.1-1-x86_gcc2.hpkg
+    pkgman install qt6_base_x86-6.10.3.2-1-x86_gcc2.hpkg
+    pkgman install qthaikuplugins_x86-5.15.16.0.3-1-x86_gcc2.hpkg
 
 ■ 注意
   - どちらも HaikuPorts の qt6_base_x86 6.10.3 / qthaikuplugins_x86 5.15.16.0 の

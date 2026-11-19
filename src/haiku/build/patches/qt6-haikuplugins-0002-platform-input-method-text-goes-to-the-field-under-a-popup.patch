@@ -1,0 +1,326 @@
+From: wainohito <wainohito@gmail.com>
+Subject: [PATCH 2/2] platform: input method text goes to the field under a popup
+
+Applications such as Falkon open a completer popup while text is typed,
+and Qt moves its focus to it, while Haiku keeps the keyboard, and the
+input method, on the window below. The text composed and committed was
+sent to the popup and lost, and the candidates were put at its corner.
+Send it to the focus object of the window the event arrived in, place
+the candidates at that object's cursor, and do not end the composition
+when the focus moves to a popup or a drag window. Also take the focus
+widget into account for QQuickWidget-based views such as QtWebEngine,
+whose inner item does not say it accepts input methods.
+
+A trace of the events is written to /tmp/qhaiku-im.log while
+~/config/settings/qhaiku-im-debug exists.
+
+How this was tested: on a VAIO P (x86_gcc2h) with Falkon 23.08 and
+Dooble: inline conversion in the search and address fields with their
+completer popups open, and in text fields of web pages.
+
+Assisted-by: Claude Opus 5.5
+Signed-off-by: wainohito <wainohito@gmail.com>
+---
+diff --git a/src/platform/qhaikuinputcontext.cpp b/src/platform/qhaikuinputcontext.cpp
+--- a/src/platform/qhaikuinputcontext.cpp	2026-11-19 20:42:25.301084677 +0900
++++ b/src/platform/qhaikuinputcontext.cpp	2026-11-19 20:42:25.303084712 +0900
+@@ -19,6 +19,8 @@
+ #include "qhaikuwindow.h"
+ 
+ #include <QtCore/QCoreApplication>
++#include <QtCore/QDateTime>
++#include <QtCore/QFile>
+ #include <QtCore/QList>
+ #include <QtGui/QGuiApplication>
+ #include <QtGui/QInputMethod>
+@@ -26,7 +28,10 @@
+ #include <QtGui/QPalette>
+ #include <QtGui/QTextCharFormat>
+ #include <QtGui/QWindow>
++#include <QtWidgets/QApplication>
++#include <QtWidgets/QWidget>
+ 
++#include <FindDirectory.h>
+ #include <Input.h>
+ #include <Message.h>
+ #include <View.h>
+@@ -56,6 +61,66 @@
+ 	return count;
+ }
+ 
++// A trace of the input method events, for finding out what goes wrong in a
++// given application. On only while ~/config/settings/qhaiku-im-debug exists
++// (checked once, at start); written to /tmp/qhaiku-im.log.
++bool traceEnabled()
++{
++	static int enabled = -1;
++	if (enabled < 0) {
++		char path[B_PATH_NAME_LENGTH];
++		enabled = find_directory(B_USER_SETTINGS_DIRECTORY, -1, false, path,
++				sizeof(path)) == B_OK
++			&& QFile::exists(QString::fromUtf8(path)
++				+ QStringLiteral("/qhaiku-im-debug")) ? 1 : 0;
++	}
++	return enabled == 1;
++}
++
++QString describe(QObject *object)
++{
++	if (object == nullptr)
++		return QStringLiteral("null");
++	return QString::fromLatin1(object->metaObject()->className())
++		+ QStringLiteral("(") + object->objectName() + QStringLiteral(")");
++}
++
++void trace(const QString &text)
++{
++	if (!traceEnabled())
++		return;
++	QFile file(QStringLiteral("/tmp/qhaiku-im.log"));
++	if (!file.open(QIODevice::Append | QIODevice::Text))
++		return;
++	file.write(QDateTime::currentDateTime().toString(
++		QStringLiteral("hh:mm:ss.zzz ")).toUtf8());
++	file.write(text.toUtf8());
++	file.write("\n");
++}
++
++// Windows that take Qt's focus but not the keyboard's: popups, such as the
++// completer lists of address and search fields, and the window showing what
++// is being dragged. Haiku keeps the keyboard focus, and with it the input
++// method, on the window below.
++bool isTransientFocusWindow(QWindow *window)
++{
++	if (window == nullptr)
++		return false;
++	const Qt::WindowType type = window->type();
++	return type == Qt::Popup || type == Qt::ToolTip
++		|| window->inherits("QShapedPixmapWindow");
++}
++
++// Asks an object whether it takes input method events.
++bool acceptsInputMethod(QObject *object)
++{
++	if (object == nullptr)
++		return false;
++	QInputMethodQueryEvent query(Qt::ImEnabled);
++	QCoreApplication::sendEvent(object, &query);
++	return query.value(Qt::ImEnabled).toBool();
++}
++
+ } // namespace
+ 
+ 
+@@ -72,6 +137,7 @@
+ 
+ void QHaikuInputContext::reset()
+ {
++	trace(QStringLiteral("reset preedit=\"%1\"").arg(m_preedit));
+ 	// Qt asks to drop the composition (a click into the text, for example).
+ 	// Keep what the user sees, the same as BTextView does, and tell the input
+ 	// method that the composition is over. Without a preedit there is nothing
+@@ -91,6 +157,11 @@
+ 
+ void QHaikuInputContext::update(Qt::InputMethodQueries queries)
+ {
++	if (queries & Qt::ImEnabled) {
++		trace(QStringLiteral("update ImEnabled, focusObject %1 accepts %2")
++			.arg(describe(QGuiApplication::focusObject()))
++			.arg(inputMethodAccepted()));
++	}
+ 	if (queries & Qt::ImEnabled)
+ 		updateInputMethodAwareness();
+ }
+@@ -98,6 +169,13 @@
+ 
+ void QHaikuInputContext::setFocusObject(QObject *object)
+ {
++	trace(QStringLiteral("setFocusObject %1 -> %2, focusWindow %3, preedit=\"%4\"")
++		.arg(describe(m_focusObject), describe(object),
++			describe(QGuiApplication::focusWindow()), m_preedit));
++	// The focus moving to a popup or a drag window is not the end of the
++	// composition: the keys, and the input method, stay with the field.
++	if (isTransientFocusWindow(QGuiApplication::focusWindow()))
++		return;
+ 	if (object != m_focusObject && !m_preedit.isEmpty()) {
+ 		commitPreedit(m_focusObject);
+ 		stopInputMethod();
+@@ -114,6 +192,19 @@
+ 	if (message->FindInt32("be:opcode", &opcode) != B_OK)
+ 		return;
+ 
++	if (traceEnabled()) {
++		const char *string = nullptr;
++		message->FindString("be:string", &string);
++		trace(QStringLiteral("event %1 in window %2, focusWindow %3, "
++				"focusObject %4, active %5, string \"%6\"")
++			.arg(opcode)
++			.arg(describe(window != nullptr ? window->window() : nullptr),
++				describe(QGuiApplication::focusWindow()),
++				describe(QGuiApplication::focusObject()))
++			.arg(m_active)
++			.arg(QString::fromUtf8(string != nullptr ? string : "")));
++	}
++
+ 	switch (opcode) {
+ 		case B_INPUT_METHOD_STARTED:
+ 			if (message->FindMessenger("be:reply_to", &m_method) == B_OK)
+@@ -121,10 +212,10 @@
+ 			m_preedit.clear();
+ 			break;
+ 		case B_INPUT_METHOD_CHANGED:
+-			handleChanged(message);
++			handleChanged(window, message);
+ 			break;
+ 		case B_INPUT_METHOD_STOPPED:
+-			handleStopped();
++			handleStopped(window);
+ 			break;
+ 		case B_INPUT_METHOD_LOCATION_REQUEST:
+ 			handleLocationRequest(window);
+@@ -133,11 +224,30 @@
+ }
+ 
+ 
+-void QHaikuInputContext::handleChanged(const BMessage *message)
++QObject *QHaikuInputContext::inputTarget(QHaikuWindow *window) const
+ {
+-	QObject *target = QGuiApplication::focusObject();
+-	if (target == nullptr)
++	// The input method talks to the window with the keyboard focus, which
++	// is the one the event arrived in. Qt may have put its own focus in a
++	// popup or a drag window of the application meanwhile; the text is still
++	// for the field of the window below, and sent to the popup it was lost.
++	QWindow *eventWindow = window != nullptr ? window->window() : nullptr;
++	QWindow *focusWindow = QGuiApplication::focusWindow();
++	if (eventWindow != nullptr && focusWindow != eventWindow
++		&& eventWindow->focusObject() != nullptr) {
++		return eventWindow->focusObject();
++	}
++	return QGuiApplication::focusObject();
++}
++
++
++void QHaikuInputContext::handleChanged(QHaikuWindow *window,
++	const BMessage *message)
++{
++	QObject *target = inputTarget(window);
++	if (target == nullptr) {
++		trace(QStringLiteral("changed: no focus object, dropped"));
+ 		return;
++	}
+ 
+ 	const char *string = nullptr;
+ 	if (message->FindString("be:string", &string) != B_OK || string == nullptr)
+@@ -211,11 +321,11 @@
+ }
+ 
+ 
+-void QHaikuInputContext::handleStopped()
++void QHaikuInputContext::handleStopped(QHaikuWindow *window)
+ {
+ 	// An input method that stops without confirming leaves its text in place,
+ 	// as BTextView does.
+-	commitPreedit(QGuiApplication::focusObject());
++	commitPreedit(inputTarget(window));
+ 	m_method = BMessenger();
+ 	m_active = false;
+ }
+@@ -226,17 +336,38 @@
+ 	if (!m_active || !m_method.IsValid())
+ 		return;
+ 
+-	QWindow *qwindow = window != nullptr ? window->window() : nullptr;
+-	if (qwindow == nullptr)
+-		qwindow = QGuiApplication::focusWindow();
+-	if (qwindow == nullptr)
+-		return;
+-
+ 	// The cursor attribute of the preedit is put at the clause being
+ 	// converted, so the cursor rectangle is where the candidates belong.
+-	const QRectF rect = QGuiApplication::inputMethod()->cursorRectangle();
++	// It is the rectangle of the object the text goes to (see inputTarget()):
++	// when Qt's focus is in a popup, QInputMethod::cursorRectangle() is the
++	// popup's, which has no cursor, and the candidates went to its corner.
++	QObject *target = inputTarget(window);
++	QWindow *qwindow = QGuiApplication::focusWindow();
++	QRectF rect;
++	QPoint topLeft;
++	QWidget *widget = qobject_cast<QWidget*>(target);
++	if (target != nullptr && target != QGuiApplication::focusObject()
++		&& widget != nullptr) {
++		QInputMethodQueryEvent query(Qt::ImCursorRectangle);
++		QCoreApplication::sendEvent(widget, &query);
++		rect = query.value(Qt::ImCursorRectangle).toRectF();
++		topLeft = widget->mapToGlobal(rect.topLeft().toPoint());
++		qwindow = widget->window()->windowHandle();
++	} else {
++		if (qwindow == nullptr)
++			qwindow = window != nullptr ? window->window() : nullptr;
++		if (qwindow == nullptr)
++			return;
++		rect = QGuiApplication::inputMethod()->cursorRectangle();
++		topLeft = qwindow->mapToGlobal(rect.topLeft().toPoint());
++	}
++	if (qwindow == nullptr)
++		return;
+ 	const qreal ratio = qwindow->devicePixelRatio();
+-	const QPoint topLeft = qwindow->mapToGlobal(rect.topLeft().toPoint());
++	trace(QStringLiteral("location: window %1 at %2,%3, cursor %4,%5 %6x%7 -> %8,%9")
++		.arg(describe(qwindow)).arg(qwindow->x()).arg(qwindow->y())
++		.arg(rect.x()).arg(rect.y()).arg(rect.width()).arg(rect.height())
++		.arg(topLeft.x()).arg(topLeft.y()));
+ 
+ 	BMessage reply(B_INPUT_METHOD_EVENT);
+ 	reply.AddInt32("be:opcode", B_INPUT_METHOD_LOCATION_REQUEST);
+@@ -279,6 +410,10 @@
+ void QHaikuInputContext::updateInputMethodAwareness()
+ {
+ 	QWindow *qwindow = QGuiApplication::focusWindow();
++	// A popup or a drag window does not take the keyboard; the window below
++	// keeps it and its flag.
++	if (isTransientFocusWindow(qwindow))
++		return;
+ 	if (qwindow == nullptr || qwindow->handle() == nullptr)
+ 		return;
+ 
+@@ -286,7 +421,23 @@
+ 	if (view == nullptr || !view->LockLooper())
+ 		return;
+ 
+-	const bool aware = inputMethodAccepted();
++	// Qt's own answer comes from QGuiApplication::focusObject(). For a
++	// QQuickWidget, such as the view of QtWebEngine, that is the item inside
++	// it, while the widget is what says whether a text field of the page has
++	// the focus; ask the window's focus widget too.
++	bool aware = inputMethodAccepted();
++	if (!aware) {
++		// Null in an application without widgets.
++		QWidget *focusWidget = QApplication::focusWidget();
++		if (focusWidget != nullptr
++			&& focusWidget->window()->windowHandle() == qwindow
++			&& focusWidget->testAttribute(Qt::WA_InputMethodEnabled)
++			&& acceptsInputMethod(focusWidget)) {
++			aware = true;
++		}
++	}
++	trace(QStringLiteral("awareness: window %1, view focus %2, aware %3")
++		.arg(describe(qwindow)).arg(view->IsFocus()).arg(aware));
+ 	const uint32 flags = view->Flags();
+ 	const bool changed = ((flags & B_INPUT_METHOD_AWARE) != 0) != aware;
+ 	if (changed) {
+diff --git a/src/platform/qhaikuinputcontext.h b/src/platform/qhaikuinputcontext.h
+--- a/src/platform/qhaikuinputcontext.h	2026-11-19 20:42:25.305084747 +0900
++++ b/src/platform/qhaikuinputcontext.h	2026-11-19 20:42:25.307437895 +0900
+@@ -56,8 +56,9 @@
+ 	void handleInputMethodMessage(QHaikuWindow *window, const BMessage *message);
+ 
+ private:
+-	void handleChanged(const BMessage *message);
+-	void handleStopped();
++	QObject *inputTarget(QHaikuWindow *window) const;
++	void handleChanged(QHaikuWindow *window, const BMessage *message);
++	void handleStopped(QHaikuWindow *window);
+ 	void handleLocationRequest(QHaikuWindow *window);
+ 	void commitPreedit(QObject *target);
+ 	void stopInputMethod();
